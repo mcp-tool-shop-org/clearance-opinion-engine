@@ -147,7 +147,7 @@ Before the engine reaches v1.0.0, the following must be true:
 - [x] Artifact schemas published and validated in CI (`summary.schema.json`, `index-entry.schema.json`)
 - [ ] Adapter reliability documented (uptime, rate limits, fallback behavior for each channel)
 - [x] Compatibility policy stated and enforced (`docs/VERSIONING.md`)
-- [ ] Website consumption proven stable (at least one production consumer of `summary.json`)
+- [x] Website consumption proven stable (`nameops` + marketing site ingest `summary.json` → `/lab/clearance/`)
 - [x] Golden snapshot tests cover all tier outcomes (GREEN, YELLOW, RED)
 - [ ] Collision cards validated against real-world runs
 
