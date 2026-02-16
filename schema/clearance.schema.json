@@ -1,0 +1,815 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcptoolshop.com/schemas/clearance.opinion.engine/clearance.schema.v1.json",
+  "title": "Clearance Opinion Engine IR",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "run",
+    "intake",
+    "variants",
+    "checks",
+    "evidence",
+    "opinion"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "run": {
+      "$ref": "#/$defs/run"
+    },
+    "intake": {
+      "$ref": "#/$defs/intake"
+    },
+    "variants": {
+      "$ref": "#/$defs/variants"
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/namespaceCheck"
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      },
+      "default": []
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      },
+      "default": []
+    },
+    "opinion": {
+      "$ref": "#/$defs/opinion"
+    },
+    "manifest": {
+      "description": "Optional deterministic lock manifest for the run artifacts (sha256).",
+      "$ref": "#/$defs/manifest"
+    }
+  },
+  "$defs": {
+    "run": {
+      "type": "object",
+      "required": [
+        "runId",
+        "engineVersion",
+        "createdAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "runId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{7,63}$",
+          "description": "Stable identifier for this run (e.g., timestamp+hash)."
+        },
+        "engineVersion": {
+          "type": "string",
+          "description": "Semver version of the engine producing this run."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "inputsSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Hash of canonicalized intake input."
+        },
+        "adapterVersions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Adapter name -> version string."
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "intake": {
+      "type": "object",
+      "required": [
+        "candidates",
+        "goodsServices",
+        "geographies",
+        "channels",
+        "riskTolerance"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/candidate"
+          }
+        },
+        "goodsServices": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 2000,
+          "description": "Plain-English description of goods/services."
+        },
+        "geographies": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/geo"
+          }
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/channel"
+          }
+        },
+        "riskTolerance": {
+          "type": "string",
+          "enum": [
+            "conservative",
+            "balanced",
+            "aggressive"
+          ],
+          "description": "Controls how strict scoring is."
+        },
+        "niceClassesHint": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 45
+          },
+          "description": "Optional user-provided Nice classes hints (1-45)."
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "required": [
+        "mark"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mark": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "The proposed word mark (name)."
+        },
+        "style": {
+          "type": "string",
+          "enum": [
+            "word",
+            "stylized",
+            "logo"
+          ],
+          "default": "word"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "geo": {
+      "type": "object",
+      "required": [
+        "type",
+        "code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "country",
+            "region"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 16,
+          "description": "Country code (e.g., US) or region code/label (e.g., EU)."
+        }
+      }
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "saas",
+        "github",
+        "app-store",
+        "ecommerce",
+        "consulting",
+        "education",
+        "media",
+        "enterprise",
+        "open-source",
+        "other"
+      ]
+    },
+    "variants": {
+      "type": "object",
+      "required": [
+        "generatedAt",
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/variantSet"
+          }
+        }
+      }
+    },
+    "variantSet": {
+      "type": "object",
+      "required": [
+        "candidateMark",
+        "canonical",
+        "forms",
+        "warnings"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "candidateMark": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "canonical": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Normalized canonical form used for deterministic comparisons."
+        },
+        "forms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/variantForm"
+          },
+          "description": "Stable-ordered list of variant strings."
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/warning"
+          },
+          "default": []
+        }
+      }
+    },
+    "variantForm": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "original",
+            "lower",
+            "nospace",
+            "hyphenated",
+            "underscored",
+            "punct-stripped",
+            "phonetic",
+            "misspelling",
+            "homoglyph-safe"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^COE\\.[A-Z0-9_]+$",
+          "description": "Stable warning code (e.g., COE.HOMOGLYPH_RISK)."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "info",
+            "warn",
+            "high"
+          ],
+          "default": "warn"
+        }
+      }
+    },
+    "namespaceCheck": {
+      "type": "object",
+      "required": [
+        "id",
+        "namespace",
+        "query",
+        "status",
+        "authority",
+        "observedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^chk\\.[a-z0-9][a-z0-9._-]{2,80}$"
+        },
+        "namespace": {
+          "type": "string",
+          "enum": [
+            "github_org",
+            "github_repo",
+            "npm",
+            "pypi",
+            "domain",
+            "custom"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "required": [
+            "candidateMark",
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "candidateMark": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "description": "The exact name being checked in this namespace."
+            },
+            "owner": {
+              "type": "string",
+              "description": "Used for github_repo checks (owner/org)."
+            }
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "available",
+            "taken",
+            "unknown"
+          ]
+        },
+        "authority": {
+          "type": "string",
+          "enum": [
+            "authoritative",
+            "indicative"
+          ]
+        },
+        "claimability": {
+          "type": "string",
+          "enum": [
+            "claimable_now",
+            "not_claimable",
+            "unknown"
+          ],
+          "default": "unknown",
+          "description": "Whether the namespace supports an immediate reserve/claim action."
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidenceRef": {
+          "type": "string",
+          "pattern": "^ev\\.[a-z0-9][a-z0-9._-]{2,80}$"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Adapter-specific details (kept small; large blobs belong in evidence)."
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/error"
+          },
+          "default": []
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": [
+        "id",
+        "candidateMark",
+        "kind",
+        "summary",
+        "severity",
+        "evidenceRefs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^fd\\.[a-z0-9][a-z0-9._-]{2,80}$"
+        },
+        "candidateMark": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "exact_conflict",
+            "near_conflict",
+            "phonetic_conflict",
+            "confusable_risk",
+            "coverage_gap"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 800
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Explainable score for this finding (0-100)."
+        },
+        "why": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "default": []
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^ev\\.[a-z0-9][a-z0-9._-]{2,80}$"
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "source",
+        "observedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^ev\\.[a-z0-9][a-z0-9._-]{2,80}$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "http_response",
+            "html",
+            "json",
+            "image",
+            "text",
+            "link"
+          ]
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "system"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "system": {
+              "type": "string",
+              "description": "System name (e.g., github, npm, pypi, registrar, web)."
+            },
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "description": "Source URL (if applicable)."
+            },
+            "method": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "POST",
+                "HEAD",
+                "OTHER"
+              ],
+              "default": "GET"
+            }
+          }
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Hash of captured bytes (if captured)."
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path": {
+          "type": "string",
+          "description": "Relative path in run artifacts if the evidence was captured to disk."
+        },
+        "repro": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "default": [],
+          "description": "Reproduction steps (e.g., curl commands) that re-check this evidence."
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "opinion": {
+      "type": "object",
+      "required": [
+        "tier",
+        "summary",
+        "reasons",
+        "assumptions",
+        "limitations",
+        "recommendedActions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "tier": {
+          "type": "string",
+          "enum": [
+            "green",
+            "yellow",
+            "red"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 2000
+        },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 400
+          }
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 400
+          },
+          "default": []
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
+          },
+          "default": [],
+          "description": "Explicit coverage gaps or uncertainty sources."
+        },
+        "recommendedActions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/recommendedAction"
+          }
+        },
+        "closestConflicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/closestConflict"
+          },
+          "default": []
+        }
+      }
+    },
+    "recommendedAction": {
+      "type": "object",
+      "required": [
+        "type",
+        "label"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "reserve_domain",
+            "claim_handles",
+            "pick_variant",
+            "narrow_goods",
+            "expand_search_coverage",
+            "consult_counsel",
+            "file_trademark"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 200
+        },
+        "details": {
+          "type": "string",
+          "maxLength": 800
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          },
+          "default": []
+        }
+      }
+    },
+    "closestConflict": {
+      "type": "object",
+      "required": [
+        "mark",
+        "why",
+        "severity"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mark": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "why": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^ev\\.[a-z0-9][a-z0-9._-]{2,80}$"
+          },
+          "default": []
+        }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "required": [
+        "generatedAt",
+        "files"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/manifestFile"
+          }
+        },
+        "rootSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Optional hash of the canonicalized manifest itself."
+        }
+      }
+    },
+    "manifestFile": {
+      "type": "object",
+      "required": [
+        "path",
+        "sha256",
+        "bytes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^COE\\.[A-Z0-9_.-]+$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 800
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    }
+  }
+}

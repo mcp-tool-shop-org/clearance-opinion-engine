@@ -1,0 +1,201 @@
+{
+  "schemaVersion": "1.0.0",
+  "run": {
+    "runId": "run.2026-02-15.4fcb37c5",
+    "engineVersion": "0.1.0",
+    "createdAt": "2026-02-15T12:00:00.000Z",
+    "inputsSha256": "4fcb37c520609059425177fdc35972263237624e267f39e25c7a7e91bf1560ca",
+    "adapterVersions": {
+      "github": "0.1.0",
+      "npm": "0.1.0",
+      "pypi": "0.1.0"
+    }
+  },
+  "intake": {
+    "candidates": [
+      {
+        "mark": "golden-test",
+        "style": "word"
+      }
+    ],
+    "goodsServices": "Software tool",
+    "geographies": [
+      {
+        "type": "region",
+        "code": "GLOBAL"
+      }
+    ],
+    "channels": [
+      "open-source"
+    ],
+    "riskTolerance": "conservative"
+  },
+  "variants": {
+    "generatedAt": "2026-02-15T12:00:00.000Z",
+    "items": [
+      {
+        "candidateMark": "golden-test",
+        "canonical": "golden-test",
+        "forms": [
+          {
+            "type": "original",
+            "value": "golden-test"
+          },
+          {
+            "type": "lower",
+            "value": "golden-test"
+          },
+          {
+            "type": "nospace",
+            "value": "goldentest"
+          },
+          {
+            "type": "hyphenated",
+            "value": "golden-test"
+          },
+          {
+            "type": "underscored",
+            "value": "golden_test"
+          },
+          {
+            "type": "punct-stripped",
+            "value": "goldentest"
+          },
+          {
+            "type": "phonetic",
+            "value": "KLTN TST"
+          },
+          {
+            "type": "homoglyph-safe",
+            "value": "golden-test"
+          }
+        ],
+        "warnings": [
+          {
+            "code": "COE.HOMOGLYPH_RISK",
+            "message": "14 confusable variant(s) detected: 6olden-test, 9olden-test, g0lden-test...",
+            "severity": "high"
+          }
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "chk.github-repo.golden-test-golden-test",
+      "namespace": "github_repo",
+      "query": {
+        "candidateMark": "golden-test",
+        "value": "golden-test",
+        "owner": "golden-test"
+      },
+      "status": "available",
+      "authority": "authoritative",
+      "observedAt": "2026-02-15T12:00:00.000Z",
+      "evidenceRef": "ev.chk.github-repo.golden-test-golden-test.0",
+      "errors": []
+    },
+    {
+      "id": "chk.npm.golden-test",
+      "namespace": "npm",
+      "query": {
+        "candidateMark": "golden-test",
+        "value": "golden-test"
+      },
+      "status": "available",
+      "authority": "authoritative",
+      "observedAt": "2026-02-15T12:00:00.000Z",
+      "evidenceRef": "ev.chk.npm.golden-test.0",
+      "errors": []
+    },
+    {
+      "id": "chk.pypi.golden-test",
+      "namespace": "pypi",
+      "query": {
+        "candidateMark": "golden-test",
+        "value": "golden-test"
+      },
+      "status": "available",
+      "authority": "authoritative",
+      "observedAt": "2026-02-15T12:00:00.000Z",
+      "evidenceRef": "ev.chk.pypi.golden-test.0",
+      "errors": []
+    }
+  ],
+  "findings": [],
+  "evidence": [
+    {
+      "id": "ev.chk.github-repo.golden-test-golden-test.0",
+      "type": "http_response",
+      "source": {
+        "system": "github",
+        "url": "https://api.github.com/repos/golden-test/golden-test",
+        "method": "GET"
+      },
+      "observedAt": "2026-02-15T12:00:00.000Z",
+      "sha256": "16741cd1d529c0641c421463b4fd36d7b98acf390f80798dc7083584c7565c63",
+      "bytes": 74,
+      "repro": [
+        "curl -s -o /dev/null -w \"%{http_code}\" \"https://api.github.com/repos/golden-test/golden-test\""
+      ]
+    },
+    {
+      "id": "ev.chk.npm.golden-test.0",
+      "type": "http_response",
+      "source": {
+        "system": "npm",
+        "url": "https://registry.npmjs.org/golden-test",
+        "method": "GET"
+      },
+      "observedAt": "2026-02-15T12:00:00.000Z",
+      "sha256": "16741cd1d529c0641c421463b4fd36d7b98acf390f80798dc7083584c7565c63",
+      "bytes": 74,
+      "repro": [
+        "curl -s -o /dev/null -w \"%{http_code}\" \"https://registry.npmjs.org/golden-test\""
+      ]
+    },
+    {
+      "id": "ev.chk.pypi.golden-test.0",
+      "type": "http_response",
+      "source": {
+        "system": "pypi",
+        "url": "https://pypi.org/pypi/golden-test/json",
+        "method": "GET"
+      },
+      "observedAt": "2026-02-15T12:00:00.000Z",
+      "sha256": "16741cd1d529c0641c421463b4fd36d7b98acf390f80798dc7083584c7565c63",
+      "bytes": 74,
+      "repro": [
+        "curl -s -o /dev/null -w \"%{http_code}\" \"https://pypi.org/pypi/golden-test/json\""
+      ]
+    }
+  ],
+  "opinion": {
+    "tier": "green",
+    "summary": "All namespaces available for \"golden-test\". No conflicts detected. Safe to proceed with claims.",
+    "reasons": [
+      "All 3 namespace check(s) returned available with no conflicts"
+    ],
+    "assumptions": [
+      "Namespace availability is checked at a point in time and may change.",
+      "This opinion covers digital namespace availability only, not trademark registration."
+    ],
+    "limitations": [
+      "This engine does not check trademark databases (USPTO, EUIPO, etc.).",
+      "Domain name availability is not checked in this version."
+    ],
+    "recommendedActions": [
+      {
+        "type": "claim_handles",
+        "label": "Claim namespace handles now",
+        "details": "All 3 namespaces are available. Reserve them before someone else does."
+      },
+      {
+        "type": "reserve_domain",
+        "label": "Consider reserving a domain",
+        "details": "Domain availability was not checked. Consider registering a matching domain."
+      }
+    ],
+    "closestConflicts": []
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "candidates": [
+    { "mark": "super-search", "style": "word" },
+    { "mark": "SuperSearch", "style": "stylized" }
+  ],
+  "goodsServices": "A search engine for developer documentation",
+  "geographies": [
+    { "type": "country", "code": "US" },
+    { "type": "region", "code": "EU" }
+  ],
+  "channels": ["open-source", "saas"],
+  "riskTolerance": "balanced"
+}

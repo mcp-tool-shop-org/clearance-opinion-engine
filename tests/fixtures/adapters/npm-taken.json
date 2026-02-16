@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"name\":\"test-tool\",\"version\":\"1.0.0\",\"description\":\"A test package\"}"
+}

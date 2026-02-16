@@ -1,0 +1,7 @@
+{
+  "candidates": [{ "mark": "my-cool-tool", "style": "word" }],
+  "goodsServices": "A developer tool for metadata management",
+  "geographies": [{ "type": "region", "code": "GLOBAL" }],
+  "channels": ["open-source"],
+  "riskTolerance": "conservative"
+}
