@@ -2,13 +2,13 @@
   "schemaVersion": "1.0.0",
   "run": {
     "runId": "run.2026-02-15.4fcb37c5",
-    "engineVersion": "0.4.0",
+    "engineVersion": "0.5.0",
     "createdAt": "2026-02-15T12:00:00.000Z",
     "inputsSha256": "4fcb37c520609059425177fdc35972263237624e267f39e25c7a7e91bf1560ca",
     "adapterVersions": {
-      "github": "0.4.0",
-      "npm": "0.4.0",
-      "pypi": "0.4.0"
+      "github": "0.5.0",
+      "npm": "0.5.0",
+      "pypi": "0.5.0"
     }
   },
   "intake": {

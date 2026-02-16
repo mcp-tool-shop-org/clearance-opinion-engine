@@ -7,6 +7,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderPacketHtml, renderSummaryJson } from "./packet.mjs";
+import { checkFreshness } from "../lib/freshness.mjs";
 
 /**
  * Escape pipe characters for Markdown table cells.
@@ -71,6 +72,15 @@ export function renderRunMd(run) {
   lines.push("");
   lines.push(opinion.summary || "No summary available.");
   lines.push("");
+
+  // Freshness Warning (conditional)
+  {
+    const freshness = checkFreshness(run, { maxAgeHours: 24 });
+    if (freshness.isStale) {
+      lines.push(`> **\u26A0\uFE0F Freshness Warning:** ${freshness.banner}`);
+      lines.push("");
+    }
+  }
 
   // Executive Summary
   lines.push("## Executive Summary");

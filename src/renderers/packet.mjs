@@ -8,6 +8,7 @@
  */
 
 import { escapeHtml, escapeAttr } from "./html-escape.mjs";
+import { checkFreshness } from "../lib/freshness.mjs";
 
 // ── CSS ────────────────────────────────────────────────────────
 
@@ -143,6 +144,17 @@ export function renderPacketHtml(run) {
   lines.push(`<h2>${tierEmoji(tier)} ${escapeHtml(tier.toUpperCase())} &mdash; ${escapeHtml(candidateNames)}</h2>`);
   lines.push(`<p>${escapeHtml(opinion.summary || "")}</p>`);
   lines.push("</section>");
+
+  // Freshness warning banner (conditional)
+  {
+    const freshness = checkFreshness(run, { maxAgeHours: 24 });
+    if (freshness.isStale) {
+      lines.push('<section class="opinion-banner yellow">');
+      lines.push(`<h2>\u26A0\uFE0F Freshness Warning</h2>`);
+      lines.push(`<p>${escapeHtml(freshness.banner)}</p>`);
+      lines.push("</section>");
+    }
+  }
 
   // Executive Summary
   {

@@ -79,6 +79,21 @@ All namespace checks are point-in-time snapshots. Between the check and any acti
 - A previously taken namespace could become available
 - Registry policies could change
 
+## Batch Mode Limits
+
+- Maximum 500 names per batch file (safety cap)
+- Concurrency defaults to 4 simultaneous checks; higher values increase API rate limit risk
+- Per-name errors are captured (not thrown), so one failing name doesn't abort the batch
+- Batch determinism requires the same `now` timestamp and identical adapter responses for all names
+
+## Freshness Scope
+
+- Freshness detection compares `check.observedAt` against the current time minus `maxAgeHours`
+- Default threshold is 24 hours
+- Freshness banners are informational — they do not change the opinion tier
+- The refresh command re-runs only stale adapter calls, not the entire pipeline
+- If adapter responses change between the original run and refresh, the opinion may change
+
 ## Determinism Scope
 
 The determinism guarantee ("same inputs + same adapter responses = byte-identical output") applies only when:

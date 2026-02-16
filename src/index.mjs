@@ -4,31 +4,31 @@
  * clearance.opinion.engine — CLI entry point.
  *
  * Commands:
- *   coe check <name> [--channels github,npm,pypi,domain] [--org myorg] [--output dir]
- *   coe report <run-file.json>
- *   coe replay <run-directory>
+ *   coe check <name>        Check name availability and produce opinion
+ *   coe batch <file>        Check multiple names from a file
+ *   coe refresh <dir>       Re-run stale checks on an existing run
+ *   coe corpus init         Create a new corpus.json template
+ *   coe corpus add          Add a mark to an existing corpus file
+ *   coe publish <dir>       Copy run artifacts for website consumption
+ *   coe report <file>       Re-render an existing run.json as Markdown
+ *   coe replay <dir>        Verify manifest and regenerate outputs
  */
 
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fail, warn } from "./lib/errors.mjs";
-import { hashObject, hashFile } from "./lib/hash.mjs";
-import { retryFetch } from "./lib/retry.mjs";
-import { createGitHubAdapter } from "./adapters/github.mjs";
-import { createNpmAdapter } from "./adapters/npm.mjs";
-import { createPyPIAdapter } from "./adapters/pypi.mjs";
-import { createDomainAdapter } from "./adapters/domain.mjs";
-import { createCollisionRadarAdapter } from "./adapters/collision-radar.mjs";
-import { createCratesIoAdapter } from "./adapters/cratesio.mjs";
-import { createDockerHubAdapter } from "./adapters/dockerhub.mjs";
-import { createHuggingFaceAdapter } from "./adapters/huggingface.mjs";
-import { loadCorpus, compareAgainstCorpus } from "./adapters/corpus.mjs";
+import { hashFile } from "./lib/hash.mjs";
 import { createCache } from "./lib/cache.mjs";
-import { generateAllVariants, selectTopN } from "./variants/index.mjs";
-import { scoreOpinion, classifyFindings } from "./scoring/opinion.mjs";
 import { writeRun, renderRunMd } from "./renderers/report.mjs";
+import { runCheck } from "./pipeline.mjs";
+import { runBatch } from "./batch/runner.mjs";
+import { parseBatchInput } from "./batch/input.mjs";
+import { writeBatchOutput } from "./batch/writer.mjs";
+import { refreshRun } from "./refresh.mjs";
+import { corpusInit, corpusAdd } from "./corpus/cli.mjs";
+import { publishRun } from "./publish.mjs";
 
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 
 // ── Channel system ──────────────────────────────────────────────
 const CORE_CHANNELS = ["github", "npm", "pypi", "domain"];
@@ -93,11 +93,16 @@ if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
   console.log(`clearance.opinion.engine v${VERSION}
 
 Usage:
-  coe check <name> [options]    Check name availability and produce opinion
-  coe report <file>             Re-render an existing run.json as Markdown
-  coe replay <dir>              Verify manifest and regenerate outputs from run.json
+  coe check <name> [options]       Check name availability and produce opinion
+  coe batch <file> [options]       Check multiple names from a .txt or .json file
+  coe refresh <dir> [options]      Re-run stale checks on an existing run
+  coe corpus init [--output path]  Create a new corpus.json template
+  coe corpus add [options]         Add a mark to an existing corpus file
+  coe publish <dir> --out <dir>    Copy run artifacts for website consumption
+  coe report <file>                Re-render an existing run.json as Markdown
+  coe replay <dir>                 Verify manifest and regenerate outputs from run.json
 
-Options:
+Check options:
   --channels <list>     Channels to check (default: github,npm,pypi,domain)
                         Groups: core, dev, ai, all
                         Additive: +cratesio,+dockerhub (adds to core default)
@@ -112,6 +117,23 @@ Options:
   --max-age-hours <n>   Cache TTL in hours (default: 24, requires --cache-dir)
   --fuzzyQueryMode <m>  Fuzzy variant query mode: off|registries|all (default: registries)
   --variantBudget <n>   Max fuzzy variants to query per channel (default: 12, max: 30)
+
+Batch options:
+  --concurrency <n>     Max simultaneous checks (default: 4)
+
+Refresh options:
+  --max-age-hours <n>   Max acceptable evidence age in hours (default: 24)
+
+Corpus add options:
+  --name <mark>         Mark name (required)
+  --class <n>           Nice classification number
+  --registrant <name>   Owner/registrant name
+  --corpus <path>       Path to corpus file (default: corpus.json)
+
+Publish options:
+  --out <dir>           Target output directory (required)
+
+General:
   --help, -h            Show this help
   --version, -v         Show version
 
@@ -229,7 +251,222 @@ if (command === "replay") {
       fail("COE.REPLAY.FATAL", err.message, { nerd: err.stack });
     });
 
-  // Prevent falling through to check command
+  // Prevent falling through to next command
+
+// ── Command: batch ──────────────────────────────────────────────
+} else if (command === "batch") {
+  const inputFile = args[1];
+  if (!inputFile) {
+    fail("COE.INIT.NO_ARGS", "No input file specified", {
+      fix: "Usage: coe batch <file.txt|file.json> [options]",
+    });
+  }
+
+  const channels = parseChannels(getFlag("--channels"));
+  const org = getFlag("--org");
+  const dockerNamespace = getFlag("--dockerNamespace");
+  const hfOwner = getFlag("--hfOwner");
+  const outputDir = getFlag("--output") || "reports";
+  const riskTolerance = getFlag("--risk") || "conservative";
+  const useRadar = args.includes("--radar");
+  const corpusPath = getFlag("--corpus");
+  const cacheDir = getFlag("--cache-dir");
+  const maxAgeHours = parseInt(getFlag("--max-age-hours") || "24", 10);
+  const fuzzyQueryMode = getFlag("--fuzzyQueryMode") || "registries";
+  const variantBudget = Math.min(parseInt(getFlag("--variantBudget") || "12", 10), 30);
+  const concurrency = parseInt(getFlag("--concurrency") || "4", 10);
+
+  async function batchMain() {
+    // Parse input file
+    let parsed;
+    try {
+      parsed = parseBatchInput(resolve(inputFile));
+    } catch (err) {
+      fail(err.code || "COE.BATCH.PARSE_FAIL", err.message, {
+        fix: "Check the input file format (.txt or .json)",
+      });
+    }
+
+    const now = new Date().toISOString();
+    const dateStr = now.slice(0, 10);
+    const batchOutputDir = resolve(join(outputDir, `batch-${dateStr}`));
+
+    console.log(`Batch: ${parsed.names.length} names from ${inputFile} (${parsed.format})`);
+    console.log(`Concurrency: ${concurrency} | Channels: ${channels.join(", ")}\n`);
+
+    const batchResult = await runBatch(parsed.names, {
+      concurrency,
+      channels,
+      org,
+      dockerNamespace,
+      hfOwner,
+      riskTolerance,
+      useRadar,
+      corpusPath,
+      fuzzyQueryMode,
+      variantBudget,
+      cacheDir: cacheDir ? resolve(cacheDir) : null,
+      maxAgeHours,
+      now,
+    });
+
+    // Write output
+    const { files } = writeBatchOutput(batchResult, batchOutputDir);
+
+    // Print summary
+    const { stats, results, errors } = batchResult;
+    console.log(`\nBatch complete in ${stats.durationMs}ms`);
+    console.log(`  Total:     ${stats.total}`);
+    console.log(`  Succeeded: ${stats.succeeded}`);
+    console.log(`  Failed:    ${stats.failed}`);
+
+    for (const r of results) {
+      const tier = r.run?.opinion?.tier || "unknown";
+      const emoji = tier === "green" ? "\u{1F7E2}" : tier === "yellow" ? "\u{1F7E1}" : "\u{1F534}";
+      console.log(`  ${emoji} ${r.name}: ${tier.toUpperCase()}`);
+    }
+
+    for (const e of errors) {
+      console.log(`  \u274C ${e.name}: ${e.error}`);
+    }
+
+    console.log(`\nOutput: ${batchOutputDir}`);
+    console.log(`Files: ${files.length} written`);
+  }
+
+  batchMain().catch((err) => {
+    fail("COE.BATCH.FATAL", err.message, { nerd: err.stack });
+  });
+
+// ── Command: refresh ────────────────────────────────────────────
+} else if (command === "refresh") {
+  const runDir = args[1];
+  if (!runDir) {
+    fail("COE.INIT.NO_ARGS", "No run directory specified", {
+      fix: "Usage: coe refresh <run-directory> [--max-age-hours 24]",
+    });
+  }
+
+  const maxAgeHours = parseInt(getFlag("--max-age-hours") || "24", 10);
+
+  async function refreshMain() {
+    const now = new Date().toISOString();
+
+    let result;
+    try {
+      result = await refreshRun(resolve(runDir), {
+        maxAgeHours,
+        now,
+      });
+    } catch (err) {
+      fail(err.code || "COE.REFRESH.FATAL", err.message, {
+        fix: "Check the run directory path",
+      });
+    }
+
+    if (!result.refreshed) {
+      console.log(`\u2705 All checks fresh (within ${maxAgeHours}h). No refresh needed.`);
+      return;
+    }
+
+    // Write refreshed run to a new directory
+    const absRunDir = resolve(runDir);
+    const refreshDir = absRunDir + "-refresh";
+    const { jsonPath, mdPath, htmlPath, summaryPath } = writeRun(result.run, refreshDir);
+
+    console.log(`\u{1F504} Refreshed ${result.staleCount} stale checks`);
+    console.log(`  Output: ${refreshDir}`);
+    console.log(`  JSON:    ${jsonPath}`);
+    console.log(`  MD:      ${mdPath}`);
+    console.log(`  HTML:    ${htmlPath}`);
+    console.log(`  Summary: ${summaryPath}`);
+
+    const tier = result.run.opinion?.tier || "unknown";
+    const emoji = tier === "green" ? "\u{1F7E2}" : tier === "yellow" ? "\u{1F7E1}" : "\u{1F534}";
+    console.log(`\n${emoji} ${tier.toUpperCase()} (refreshed opinion)`);
+  }
+
+  refreshMain().catch((err) => {
+    fail("COE.REFRESH.FATAL", err.message, { nerd: err.stack });
+  });
+
+// ── Command: corpus ─────────────────────────────────────────────
+} else if (command === "corpus") {
+  const subcommand = args[1];
+
+  if (subcommand === "init") {
+    const outputPath = getFlag("--output") || "corpus.json";
+
+    try {
+      const result = corpusInit(resolve(outputPath));
+      console.log(`\u2705 Created corpus template: ${result.path}`);
+    } catch (err) {
+      fail(err.code || "COE.CORPUS.INIT_FAIL", err.message);
+    }
+
+  } else if (subcommand === "add") {
+    const name = getFlag("--name");
+    if (!name) {
+      fail("COE.INIT.NO_ARGS", "No mark name specified", {
+        fix: "Usage: coe corpus add --name \"React\" [--class 9] [--registrant \"Meta\"] [--corpus path]",
+      });
+    }
+
+    const niceClass = getFlag("--class");
+    const registrant = getFlag("--registrant");
+    const corpusPathArg = getFlag("--corpus") || "corpus.json";
+
+    try {
+      const result = corpusAdd(resolve(corpusPathArg), {
+        name,
+        class: niceClass ? parseInt(niceClass, 10) : undefined,
+        registrant: registrant || undefined,
+      });
+
+      if (result.added) {
+        console.log(`\u2705 Added mark: "${name}" (id: ${result.id})`);
+      } else {
+        console.log(`\u26A0\uFE0F Mark "${name}" already exists in corpus (${result.reason})`);
+      }
+    } catch (err) {
+      fail(err.code || "COE.CORPUS.ADD_FAIL", err.message);
+    }
+
+  } else {
+    fail("COE.INIT.NO_ARGS", `Unknown corpus subcommand: ${subcommand || "(none)"}`, {
+      fix: "Usage: coe corpus init | coe corpus add --name <mark>",
+    });
+  }
+
+// ── Command: publish ────────────────────────────────────────────
+} else if (command === "publish") {
+  const runDir = args[1];
+  if (!runDir) {
+    fail("COE.INIT.NO_ARGS", "No run directory specified", {
+      fix: "Usage: coe publish <run-directory> --out <output-directory>",
+    });
+  }
+
+  const outDir = getFlag("--out");
+  if (!outDir) {
+    fail("COE.INIT.NO_ARGS", "No output directory specified", {
+      fix: "Usage: coe publish <run-directory> --out <output-directory>",
+    });
+  }
+
+  try {
+    const result = publishRun(resolve(runDir), resolve(outDir));
+    console.log(`\u{1F4E6} Published ${result.published.length} files to ${resolve(outDir)}`);
+    for (const f of result.published) {
+      console.log(`  \u2713 ${f}`);
+    }
+    if (result.indexGenerated) {
+      console.log(`  \u2713 index.html (multi-run listing)`);
+    }
+  } catch (err) {
+    fail(err.code || "COE.PUBLISH.FATAL", err.message);
+  }
+
 } else if (command === "check") {
   // ── Command: check ─────────────────────────────────────────────
 
@@ -241,7 +478,6 @@ if (command === "replay") {
   }
 
   const channels = parseChannels(getFlag("--channels"));
-
   const org = getFlag("--org");
   const dockerNamespace = getFlag("--dockerNamespace");
   const hfOwner = getFlag("--hfOwner");
@@ -254,269 +490,39 @@ if (command === "replay") {
   const fuzzyQueryMode = getFlag("--fuzzyQueryMode") || "registries";
   const variantBudget = Math.min(parseInt(getFlag("--variantBudget") || "12", 10), 30);
 
-  /**
-   * Wrap an adapter call with cache.
-   * Returns cached result or fetches fresh + stores in cache.
-   * Sets `cacheHit` on each check in the result.
-   */
-  async function withCache(cache, adapter, version, query, fetchFn) {
-    if (!cache) {
-      const result = await fetchFn();
-      // Mark as not from cache
-      if (result.check) result.check.cacheHit = false;
-      if (result.checks) result.checks.forEach((c) => { c.cacheHit = false; });
-      return result;
-    }
-
-    const cached = cache.get(adapter, query, version);
-    if (cached) {
-      const result = cached.data;
-      if (result.check) result.check.cacheHit = true;
-      if (result.checks) result.checks.forEach((c) => { c.cacheHit = true; });
-      return result;
-    }
-
-    const result = await fetchFn();
-    if (result.check) result.check.cacheHit = false;
-    if (result.checks) result.checks.forEach((c) => { c.cacheHit = false; });
-    cache.set(adapter, query, version, result);
-    return result;
-  }
-
-  // ── Main pipeline ──────────────────────────────────────────────
-
   async function main() {
     const now = new Date().toISOString();
     const dateStr = now.slice(0, 10);
     const runOutputDir = resolve(join(outputDir, dateStr));
 
-    // Create retry-wrapped fetch
-    const fetchWithRetry = retryFetch(globalThis.fetch, {
-      maxRetries: 2,
-      baseDelayMs: 500,
-    });
-
     // Create cache if requested
     const cache = cacheDir ? createCache(resolve(cacheDir), { maxAgeHours }) : null;
 
-    // 1. Build intake
-    const intake = {
-      candidates: [{ mark: candidateName, style: "word" }],
-      goodsServices: "Software tool / package",
-      geographies: [{ type: "region", code: "GLOBAL" }],
-      channels: channels.map((c) => {
-        if (c === "github") return "open-source";
-        if (c === "npm") return "open-source";
-        if (c === "pypi") return "open-source";
-        if (c === "cratesio") return "open-source";
-        if (c === "dockerhub") return "SaaS";
-        if (c === "huggingface") return "SaaS";
-        if (c === "domain") return "other";
-        return "other";
-      }),
+    const run = await runCheck(candidateName, {
+      channels,
+      org,
+      dockerNamespace,
+      hfOwner,
       riskTolerance,
-    };
+      useRadar,
+      corpusPath,
+      fuzzyQueryMode,
+      variantBudget,
+      now,
+      cache,
+    });
 
-    // 2. Generate variants
-    const variants = generateAllVariants([candidateName], { now });
-
-    // 3. Create adapters + run checks
-    const allChecks = [];
-    const allEvidence = [];
-
-    if (channels.includes("github")) {
-      const gh = createGitHubAdapter(fetchWithRetry);
-
-      if (org) {
-        const result = await withCache(cache, "github.org", VERSION, { org }, async () => {
-          return gh.checkOrg(org, { now });
-        });
-        allChecks.push(result.check);
-        allEvidence.push(result.evidence);
-      }
-
-      const repoOwner = org || candidateName;
-      const result = await withCache(cache, "github.repo", VERSION, { owner: repoOwner, repo: candidateName }, async () => {
-        return gh.checkRepo(repoOwner, candidateName, { now });
-      });
-      allChecks.push(result.check);
-      allEvidence.push(result.evidence);
-    }
-
-    if (channels.includes("npm")) {
-      const npm = createNpmAdapter(fetchWithRetry);
-      const result = await withCache(cache, "npm", VERSION, { name: candidateName }, async () => {
-        return npm.checkPackage(candidateName, { now });
-      });
-      allChecks.push(result.check);
-      allEvidence.push(result.evidence);
-    }
-
-    if (channels.includes("pypi")) {
-      const pypi = createPyPIAdapter(fetchWithRetry);
-      const result = await withCache(cache, "pypi", VERSION, { name: candidateName }, async () => {
-        return pypi.checkPackage(candidateName, { now });
-      });
-      allChecks.push(result.check);
-      allEvidence.push(result.evidence);
-    }
-
-    if (channels.includes("domain")) {
-      const domain = createDomainAdapter(fetchWithRetry);
-      for (const tld of domain.tlds) {
-        const result = await withCache(cache, "domain", VERSION, { name: candidateName, tld }, async () => {
-          return domain.checkDomain(candidateName, tld, { now });
-        });
-        allChecks.push(result.check);
-        allEvidence.push(result.evidence);
-      }
-    }
-
-    // 3a. New ecosystem adapters
-
-    if (channels.includes("cratesio")) {
-      const crates = createCratesIoAdapter(fetchWithRetry);
-      const result = await withCache(cache, "cratesio", VERSION, { name: candidateName }, async () => {
-        return crates.checkCrate(candidateName, { now });
-      });
-      allChecks.push(result.check);
-      allEvidence.push(result.evidence);
-    }
-
-    if (channels.includes("dockerhub")) {
-      const docker = createDockerHubAdapter(fetchWithRetry);
-      const result = await withCache(cache, "dockerhub", VERSION, { namespace: dockerNamespace, name: candidateName }, async () => {
-        return docker.checkRepo(dockerNamespace, candidateName, { now });
-      });
-      allChecks.push(result.check);
-      allEvidence.push(result.evidence);
-    }
-
-    if (channels.includes("huggingface")) {
-      const hf = createHuggingFaceAdapter(fetchWithRetry);
-      const modelResult = await withCache(cache, "huggingface.model", VERSION, { owner: hfOwner, name: candidateName }, async () => {
-        return hf.checkModel(hfOwner, candidateName, { now });
-      });
-      allChecks.push(modelResult.check);
-      allEvidence.push(modelResult.evidence);
-
-      const spaceResult = await withCache(cache, "huggingface.space", VERSION, { owner: hfOwner, name: candidateName }, async () => {
-        return hf.checkSpace(hfOwner, candidateName, { now });
-      });
-      allChecks.push(spaceResult.check);
-      allEvidence.push(spaceResult.evidence);
-    }
-
-    // 3b. Collision radar (indicative market-usage signals)
-    if (useRadar) {
-      const radar = createCollisionRadarAdapter(fetchWithRetry, {
-        similarityThreshold: 0.70,
-      });
-      const radarResult = await withCache(cache, "collision-radar", VERSION, { name: candidateName }, async () => {
-        return radar.scanAll(candidateName, { now });
-      });
-      allChecks.push(...(radarResult.checks || []));
-      allEvidence.push(...(radarResult.evidence || []));
-    }
-
-    // 3c. Fuzzy variant registry queries
-    if (fuzzyQueryMode !== "off") {
-      const fuzzyList = variants.items?.[0]?.fuzzyVariants || [];
-      const variantCandidates = selectTopN(fuzzyList, variantBudget);
-
-      // Build list of registry adapters to query (npm, pypi, cratesio only)
-      const registryAdapters = [];
-      if (channels.includes("npm")) {
-        const npm = createNpmAdapter(fetchWithRetry);
-        registryAdapters.push(["npm", (name, opts) => npm.checkPackage(name, opts)]);
-      }
-      if (channels.includes("pypi")) {
-        const pypi = createPyPIAdapter(fetchWithRetry);
-        registryAdapters.push(["pypi", (name, opts) => pypi.checkPackage(name, opts)]);
-      }
-      if (channels.includes("cratesio")) {
-        const crates = createCratesIoAdapter(fetchWithRetry);
-        registryAdapters.push(["cratesio", (name, opts) => crates.checkCrate(name, opts)]);
-      }
-
-      for (const variant of variantCandidates) {
-        for (const [adapterName, checkFn] of registryAdapters) {
-          const result = await withCache(cache, `fuzzy.${adapterName}`, VERSION, { name: variant }, async () => {
-            return checkFn(variant, { now });
-          });
-          // Mark as variant check for scoring
-          result.check.query.isVariant = true;
-          result.check.query.originalCandidate = candidateName;
-          allChecks.push(result.check);
-          allEvidence.push(result.evidence);
-        }
-      }
-    }
-
-    // 4. Classify findings
-    const findings = classifyFindings(allChecks, variants);
-
-    // 4b. Corpus comparison (user-provided known marks)
-    if (corpusPath) {
-      const absCorpusPath = resolve(corpusPath);
-      if (!existsSync(absCorpusPath)) {
-        fail("COE.CORPUS.NOT_FOUND", `Corpus file not found: ${absCorpusPath}`, {
-          fix: "Check the --corpus file path",
-        });
-      }
-      const corpus = loadCorpus(absCorpusPath);
-      const corpusResult = compareAgainstCorpus(candidateName, corpus, {
-        threshold: 0.70,
-      });
-      findings.push(...corpusResult.findings);
-      allEvidence.push(...corpusResult.evidence);
-    }
-
-    // 5. Score opinion
-    const opinion = scoreOpinion(
-      { checks: allChecks, findings, variants, evidence: allEvidence },
-      { riskTolerance }
-    );
-
-    // 6. Build run object
-    const inputsSha256 = hashObject(intake);
-    const runId = `run.${dateStr}.${inputsSha256.slice(0, 8)}`;
-
-    const adapterVersions = {};
-    for (const ch of channels) {
-      adapterVersions[ch] = VERSION;
-    }
-    if (useRadar) {
-      adapterVersions.collision_radar = VERSION;
-    }
-
-    const run = {
-      schemaVersion: "1.0.0",
-      run: {
-        runId,
-        engineVersion: VERSION,
-        createdAt: now,
-        inputsSha256,
-        adapterVersions,
-      },
-      intake,
-      variants,
-      checks: allChecks,
-      findings,
-      evidence: allEvidence,
-      opinion,
-    };
-
-    // 7. Write output
+    // Write output
     const { jsonPath, mdPath, htmlPath, summaryPath } = writeRun(run, runOutputDir);
 
-    // 8. Print summary
+    // Print summary
+    const { opinion, checks, findings, evidence } = run;
     const tierEmoji =
       opinion.tier === "green" ? "\u{1F7E2}" : opinion.tier === "yellow" ? "\u{1F7E1}" : "\u{1F534}";
     console.log(`\n${tierEmoji} ${opinion.tier.toUpperCase()} — ${candidateName}\n`);
     console.log(opinion.summary);
     console.log(`\nScore: ${opinion.scoreBreakdown?.overallScore ?? "?"}/100`);
-    console.log(`Checks: ${allChecks.length} | Findings: ${findings.length} | Evidence: ${allEvidence.length}`);
+    console.log(`Checks: ${checks.length} | Findings: ${findings.length} | Evidence: ${evidence.length}`);
     console.log(`\nOutput: ${jsonPath}`);
     console.log(`Report: ${mdPath}`);
     console.log(`HTML:   ${htmlPath}`);
@@ -533,6 +539,6 @@ if (command === "replay") {
   });
 } else {
   fail("COE.INIT.NO_ARGS", `Unknown command: ${command}`, {
-    fix: "Use 'check', 'report', or 'replay'. Run with --help for usage.",
+    fix: "Use 'check', 'batch', 'refresh', 'corpus', 'publish', 'report', or 'replay'. Run with --help for usage.",
   });
 }

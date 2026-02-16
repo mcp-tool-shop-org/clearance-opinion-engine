@@ -167,6 +167,57 @@ node src/index.mjs check my-cool-tool --fuzzyQueryMode off
 
 # Full pipeline: all channels + radar + corpus + cache
 node src/index.mjs check my-cool-tool --channels all --dockerNamespace myorg --hfOwner myuser --radar --corpus marks.json --cache-dir .coe-cache
+
+# ── Batch mode ──────────────────────────────────────────────
+
+# Check multiple names from a text file
+node src/index.mjs batch names.txt --channels github,npm --output reports
+
+# Check multiple names from a JSON file with per-name config
+node src/index.mjs batch names.json --concurrency 4 --cache-dir .coe-cache
+
+# ── Refresh ─────────────────────────────────────────────────
+
+# Re-run stale checks on an existing run (default: 24h threshold)
+node src/index.mjs refresh reports/2026-02-15
+
+# Custom freshness threshold
+node src/index.mjs refresh reports/2026-02-15 --max-age-hours 12
+
+# ── Corpus management ──────────────────────────────────────
+
+# Create a new corpus template
+node src/index.mjs corpus init --output marks.json
+
+# Add marks to the corpus
+node src/index.mjs corpus add --name "React" --class 9 --registrant "Meta" --corpus marks.json
+node src/index.mjs corpus add --name "Vue" --class 9 --registrant "Evan You" --corpus marks.json
+
+# ── Publish ─────────────────────────────────────────────────
+
+# Export run artifacts for website consumption
+node src/index.mjs publish reports/2026-02-15 --out dist/clearance/run1
+```
+
+### Batch mode
+
+`coe batch <file>` reads candidate names from a `.txt` or `.json` file, checks each one with shared caching and concurrency control, and produces per-name run artifacts plus batch-level summaries.
+
+**Text format** (`.txt`): One name per line. Blank lines and `#` comments are ignored.
+
+**JSON format** (`.json`): Array of strings `["name1", "name2"]` or objects `[{ "name": "name1", "riskTolerance": "aggressive" }]`.
+
+Output structure:
+```
+batch-2026-02-15/
+  batch/
+    results.json
+    summary.csv
+    index.html       (dashboard)
+  name-1/
+    run.json, run.md, report.html, summary.json
+  name-2/
+    ...
 ```
 
 ### Replay command
@@ -203,6 +254,7 @@ No config file required. All options are CLI flags:
 | `--dockerNamespace` | _(none)_ | Docker Hub namespace (user/org) — required when `dockerhub` channel is enabled |
 | `--hfOwner` | _(none)_ | Hugging Face owner (user/org) — required when `huggingface` channel is enabled |
 | `--fuzzyQueryMode` | `registries` | Fuzzy variant query mode: `off`, `registries`, `all` |
+| `--concurrency` | `4` | Max simultaneous checks in batch mode |
 | `--variantBudget` | `12` | Max fuzzy variants to query per registry (max: 30) |
 
 ### Environment variables
@@ -259,6 +311,15 @@ All tests use fixture-injected adapters (zero network calls). Golden snapshots e
 | `COE.REPLAY.NO_RUN` | No `run.json` in replay directory |
 | `COE.REPLAY.HASH_MISMATCH` | Manifest hash mismatch during replay |
 | `COE.REPLAY.MD_DIFF` | Regenerated Markdown differs from original |
+| `COE.BATCH.BAD_FORMAT` | Unsupported batch file format |
+| `COE.BATCH.EMPTY` | Batch file contains no names |
+| `COE.BATCH.DUPLICATE` | Duplicate name in batch file |
+| `COE.BATCH.TOO_MANY` | Batch exceeds 500-name safety cap |
+| `COE.REFRESH.NO_RUN` | No `run.json` in refresh directory |
+| `COE.PUBLISH.NOT_FOUND` | Run directory not found for publish |
+| `COE.PUBLISH.NO_FILES` | No publishable files in directory |
+| `COE.CORPUS.EXISTS` | Corpus file already exists (during init) |
+| `COE.CORPUS.EMPTY_NAME` | Mark name is required but empty |
 
 See [docs/RUNBOOK.md](docs/RUNBOOK.md) for the complete error reference and troubleshooting guide.
 
@@ -288,6 +349,8 @@ See [docs/RUNBOOK.md](docs/RUNBOOK.md) for the complete error reference and trou
 - Homoglyph detection covers ASCII + Cyrillic + Greek (not all Unicode scripts)
 - No social media handle checks
 - All checks are point-in-time snapshots
+- Batch mode capped at 500 names per file
+- Freshness detection is informational only (does not change opinion tier)
 
 See [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for the full list.
 

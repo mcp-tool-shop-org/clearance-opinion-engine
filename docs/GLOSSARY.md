@@ -98,6 +98,24 @@ The Docker Hub adapter. Checks Docker repository name availability. Requires `--
 ## huggingface
 The Hugging Face adapter. Checks model and space name availability. Requires `--hfOwner <owner>` to specify the Hugging Face user or org. Namespaces: `huggingface_model`, `huggingface_space`. Skips with `COE.HF.OWNER_REQUIRED` if owner is not provided.
 
+## batch mode
+Check multiple candidate names in a single command. Reads names from a `.txt` or `.json` file, runs `runCheck()` through a concurrency pool with shared caching, and produces per-name run artifacts plus batch-level summary outputs (CSV, JSON, HTML dashboard). Invoked via `coe batch <file>`.
+
+## freshness
+A measure of how recent the evidence in a run is. Checks whose `observedAt` timestamp exceeds `maxAgeHours` are considered stale. Freshness banners appear in Markdown and HTML renderers. See `checkFreshness()` in `src/lib/freshness.mjs`.
+
+## refresh
+The `coe refresh <dir>` command. Reads an existing `run.json`, identifies stale checks, re-runs only the stale adapter calls, and produces a new run object with updated evidence. The original run is never modified.
+
+## publish
+The `coe publish <dir> --out <dir>` command. Copies run artifacts (`report.html`, `summary.json`, `manifest.json`) to a target directory for website consumption. Generates an `index.html` listing when multiple runs are published.
+
+## concurrency pool
+A Promise-based semaphore that limits parallel async tasks. Used by batch mode to control how many names are checked simultaneously. See `createPool()` in `src/lib/concurrency.mjs`.
+
+## rate limiter
+A token-bucket rate limiter with injectable clock. Spaces calls to stay within a maximum per-second threshold. See `createRateLimiter()` in `src/lib/concurrency.mjs`.
+
 ## error codes
 All errors use the prefix `COE.<CATEGORY>.<TYPE>`:
 - `COE.INIT.*` — initialization/CLI errors
@@ -110,3 +128,6 @@ All errors use the prefix `COE.<CATEGORY>.<TYPE>`:
 - `COE.REPLAY.*` — replay verification errors
 - `COE.DOCKER.*` — Docker Hub-specific errors
 - `COE.HF.*` — Hugging Face-specific errors
+- `COE.BATCH.*` — batch input parsing errors
+- `COE.REFRESH.*` — refresh command errors
+- `COE.PUBLISH.*` — publish command errors

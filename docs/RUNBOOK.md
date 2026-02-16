@@ -60,6 +60,35 @@ Operational reference for clearance-opinion-engine. All error codes, troubleshoo
 |------|---------|-----|
 | `COE.CORPUS.INVALID` | Corpus file has invalid format | Ensure JSON has `{ marks: [{ mark: "name" }] }` structure |
 | `COE.CORPUS.NOT_FOUND` | Corpus file not found at specified path | Check the `--corpus` file path |
+| `COE.CORPUS.EXISTS` | Corpus file already exists (during init) | Use a different path or delete the existing file |
+| `COE.CORPUS.EMPTY_NAME` | Mark name is required but empty | Provide a non-empty `--name` value |
+
+### COE.BATCH.* — Batch Errors
+
+| Code | Meaning | Fix |
+|------|---------|-----|
+| `COE.BATCH.BAD_FORMAT` | Unsupported batch file format | Use `.txt` or `.json` extension |
+| `COE.BATCH.READ_FAIL` | Cannot read batch file | Check file path and permissions |
+| `COE.BATCH.EMPTY` | Batch file contains no names | Add at least one name to the file |
+| `COE.BATCH.DUPLICATE` | Duplicate name in batch file | Remove duplicate entries |
+| `COE.BATCH.TOO_MANY` | Batch file exceeds 500-name limit | Split into multiple batch files |
+| `COE.BATCH.EMPTY_NAME` | An entry has an empty name | Remove empty entries from the file |
+| `COE.BATCH.BAD_ENTRY` | Entry is not a string or valid object | Ensure each entry is `"name"` or `{ "name": "value" }` |
+| `COE.BATCH.BAD_JSON` | Invalid JSON in batch file | Fix JSON syntax errors |
+
+### COE.REFRESH.* — Refresh Errors
+
+| Code | Meaning | Fix |
+|------|---------|-----|
+| `COE.REFRESH.NO_RUN` | No `run.json` in specified directory | Check the run directory path |
+| `COE.REFRESH.INVALID_RUN` | Invalid `run.json` format | Ensure the file is valid JSON |
+
+### COE.PUBLISH.* — Publish Errors
+
+| Code | Meaning | Fix |
+|------|---------|-----|
+| `COE.PUBLISH.NOT_FOUND` | Run directory not found | Check the run directory path |
+| `COE.PUBLISH.NO_FILES` | No publishable files in directory | Ensure directory contains `report.html` and/or `summary.json` |
 
 ### COE.RENDER.* — Output Errors
 
@@ -141,6 +170,26 @@ rm -rf .coe-cache
 - **npm Search API**: No documented rate limit, but excessive use may trigger 429s
 - Collision radar uses `Promise.allSettled()` — if one source fails, the other still returns results
 - Use `--cache-dir` to avoid repeated API calls during development
+
+### Batch Mode
+
+Common batch scenarios:
+
+1. **Large batch hangs**: Reduce `--concurrency` (default: 4). Higher concurrency means more simultaneous network calls
+2. **One name fails**: Batch continues — failed names appear in `errors[]`, not in `results[]`
+3. **Cache shared across batch**: Use `--cache-dir` so all names benefit from shared caching
+4. **Input format**: `.txt` is one name per line (use `#` for comments). `.json` accepts `["name"]` or `[{ "name": "x", "riskTolerance": "aggressive" }]`
+5. **Safety cap**: Maximum 500 names per batch file
+
+### Refresh Command
+
+Use `coe refresh <dir>` to update stale evidence:
+
+1. Reads `run.json` from the specified directory
+2. Identifies checks older than `--max-age-hours` (default: 24)
+3. Re-runs only stale adapter calls
+4. Writes refreshed run to `<dir>-refresh/`
+5. Original directory is never modified
 
 ### Output Files
 

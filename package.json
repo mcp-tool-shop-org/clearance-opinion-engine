@@ -1,6 +1,6 @@
 {
   "name": "clearance-opinion-engine",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Deterministic name-availability and clearance-opinion engine",
   "type": "module",
   "main": "src/index.mjs",
@@ -39,6 +39,9 @@
     "cratesio",
     "dockerhub",
     "huggingface",
-    "fuzzy-variants"
+    "fuzzy-variants",
+    "batch-mode",
+    "freshness",
+    "refresh"
   ]
 }

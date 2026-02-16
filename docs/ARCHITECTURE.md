@@ -3,11 +3,14 @@
 ## Module dependency graph
 
 ```
-src/index.mjs (CLI entry)
+src/index.mjs (CLI entry — check, batch, refresh, corpus, publish, report, replay)
+├── src/pipeline.mjs           (runCheck, withCache — extracted check pipeline)
 ├── src/lib/errors.mjs         (fail, warn, makeError)
 ├── src/lib/hash.mjs           (hashString, hashObject, hashFile)
 ├── src/lib/retry.mjs          (withRetry, retryFetch, defaultSleep)
 ├── src/lib/cache.mjs          (createCache — time-windowed disk cache)
+├── src/lib/concurrency.mjs    (createPool, createRateLimiter — batch primitives)
+├── src/lib/freshness.mjs      (checkFreshness, findStaleAdapters — staleness detection)
 ├── src/adapters/
 │   ├── github.mjs             (createGitHubAdapter)
 │   ├── npm.mjs                (createNpmAdapter)
@@ -18,6 +21,14 @@ src/index.mjs (CLI entry)
 │   ├── dockerhub.mjs          (createDockerHubAdapter — Docker Hub)
 │   ├── huggingface.mjs        (createHuggingFaceAdapter — Hugging Face models + spaces)
 │   └── corpus.mjs             (loadCorpus, compareAgainstCorpus)
+├── src/batch/
+│   ├── runner.mjs             (runBatch — concurrent batch execution)
+│   ├── input.mjs              (parseBatchInput — .txt/.json parser)
+│   └── writer.mjs             (writeBatchOutput — batch disk writer)
+├── src/corpus/
+│   └── cli.mjs                (corpusInit, corpusAdd — corpus management)
+├── src/refresh.mjs            (refreshRun — stale check re-runner)
+├── src/publish.mjs            (publishRun — artifact export for websites)
 ├── src/variants/
 │   ├── index.mjs              (generateVariants, generateAllVariants)
 │   ├── normalize.mjs          (normalize, stripAll)
@@ -30,8 +41,9 @@ src/index.mjs (CLI entry)
 │   ├── weights.mjs            (computeScoreBreakdown, WEIGHT_PROFILES)
 │   └── similarity.mjs         (jaroWinkler, comparePair, findSimilarMarks)
 └── src/renderers/
-    ├── report.mjs             (writeRun, renderRunMd)
-    ├── packet.mjs             (renderPacketHtml, renderSummaryJson)
+    ├── report.mjs             (writeRun, renderRunMd + freshness banners)
+    ├── packet.mjs             (renderPacketHtml, renderSummaryJson + freshness banners)
+    ├── batch.mjs              (renderBatchResultsJson, renderBatchSummaryCsv, renderBatchDashboardHtml)
     └── html-escape.mjs        (escapeHtml, escapeAttr)
 ```
 
@@ -210,3 +222,72 @@ The HTML packet is a self-contained report:
 - All user strings HTML-escaped via `escapeHtml()` (security boundary)
 - Includes score breakdown table, namespace checks, findings, evidence, and links
 - Deterministic: same run object produces identical HTML
+
+## Pipeline extraction
+
+The check pipeline (`src/pipeline.mjs`) was extracted from the CLI entry point so batch mode, refresh, and publish can invoke it programmatically. `runCheck(candidateName, opts)` is a pure function that returns a complete run object without writing to disk.
+
+## Batch mode
+
+The batch system (`src/batch/`) checks N names in one command with shared caching and concurrency control:
+
+- `parseBatchInput(filePath)` — parses `.txt` (one per line, `#` comments) or `.json` (string array or object array with per-name config). Safety cap: 500 names.
+- `runBatch(names, opts)` — runs `runCheck()` for each name through a concurrency pool. Per-name errors are captured, not thrown. Results sorted by name for deterministic output.
+- `writeBatchOutput(batchResult, outputDir)` — writes batch-level files (`results.json`, `summary.csv`, `index.html`) plus per-name subdirectories with full run artifacts.
+
+Output structure:
+```
+<outputDir>/
+  batch/
+    results.json
+    summary.csv
+    index.html       (dark-theme dashboard)
+  <name-1>/
+    run.json, run.md, report.html, summary.json
+  <name-2>/
+    ...
+```
+
+## Concurrency primitives
+
+The concurrency module (`src/lib/concurrency.mjs`) provides batch-mode primitives:
+
+- `createPool(concurrency)` — Promise-based semaphore pool. `run(fn)` enqueues, `drain()` waits for all.
+- `createRateLimiter(maxPerSecond, opts)` — Token-bucket rate limiter with injectable clock/sleep.
+
+## Freshness detection
+
+The freshness module (`src/lib/freshness.mjs`) detects stale evidence:
+
+- `checkFreshness(run, { maxAgeHours, now })` — compares `check.observedAt` timestamps against threshold. Returns `{ isStale, staleChecks[], banner }`.
+- `findStaleAdapters(run, { maxAgeHours, now })` — identifies which adapter checks need refreshing.
+
+Freshness banners appear automatically in Markdown and HTML renderers when evidence is older than 24 hours.
+
+## Refresh command
+
+The refresh module (`src/refresh.mjs`) re-runs stale adapter checks:
+
+1. Reads `run.json` from an existing run directory
+2. Identifies stale checks via `findStaleAdapters()`
+3. Re-runs only the stale adapter calls
+4. Merges fresh results into the existing run
+5. Re-classifies findings and re-scores opinion
+6. Returns a new run object (original directory is never modified)
+
+## Corpus CLI
+
+The corpus CLI (`src/corpus/cli.mjs`) manages user-provided mark databases:
+
+- `corpusInit(outputPath)` — creates a `corpus.json` template
+- `corpusAdd(corpusPath, entry)` — appends a mark with deterministic ID, deduplicates case-insensitively, writes atomically
+
+These are management tools for the corpus comparison engine already in `src/adapters/corpus.mjs`.
+
+## Publish command
+
+The publish module (`src/publish.mjs`) copies run artifacts for website consumption:
+
+- Copies `report.html`, `summary.json`, `manifest.json` to an output directory
+- Generates `index.html` listing when multiple sibling runs are published
+- Read-only against the source run directory

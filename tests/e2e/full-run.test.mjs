@@ -27,7 +27,7 @@ const goldenDir = join(fixturesDir, "golden");
 
 // Fixed timestamp for determinism
 const NOW = "2026-02-15T12:00:00.000Z";
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 const corpusFixturePath = join(fixturesDir, "corpus", "sample-corpus.json");
 
 // ── Mock fetch factories ───────────────────────────────────────
