@@ -11,12 +11,48 @@
  *            or multiple confusable_risk findings
  */
 
+import { computeScoreBreakdown } from "./weights.mjs";
+
+/**
+ * Build reservation links for a candidate name based on check results.
+ *
+ * All links are dry-run/search — no auto-purchase.
+ *
+ * @param {string} candidateName
+ * @param {object[]} checks
+ * @returns {{ claimLinks: string[], domainLinks: string[] }}
+ */
+function buildReservationLinks(candidateName, checks) {
+  const claimLinks = [];
+  const domainLinks = [];
+  const encodedName = encodeURIComponent(candidateName);
+
+  for (const c of checks) {
+    if (c.status !== "available") continue;
+
+    if (c.namespace === "npm") {
+      claimLinks.push(`https://www.npmjs.com/package/${encodedName}`);
+    } else if (c.namespace === "pypi") {
+      claimLinks.push(`https://pypi.org/project/${encodedName}/`);
+    } else if (c.namespace === "github_repo") {
+      claimLinks.push("https://github.com/new");
+    } else if (c.namespace === "github_org") {
+      claimLinks.push("https://github.com/organizations/new");
+    } else if (c.namespace === "domain") {
+      const fqdn = c.query?.value || `${candidateName}.com`;
+      domainLinks.push(`https://www.namecheap.com/domains/registration/results/?domain=${encodeURIComponent(fqdn)}`);
+    }
+  }
+
+  return { claimLinks, domainLinks };
+}
+
 /**
  * Score an opinion from checks, findings, and variant data.
  *
  * @param {{ checks: object[], findings: object[], variants: object }} data
  * @param {{ riskTolerance?: string }} [opts]
- * @returns {{ tier: string, summary: string, reasons: string[], assumptions: string[], limitations: string[], recommendedActions: object[], closestConflicts: object[] }}
+ * @returns {{ tier: string, summary: string, reasons: string[], assumptions: string[], limitations: string[], recommendedActions: object[], closestConflicts: object[], scoreBreakdown: object }}
  */
 export function scoreOpinion(data, opts = {}) {
   const { checks = [], findings = [], variants = {} } = data;
@@ -128,30 +164,53 @@ export function scoreOpinion(data, opts = {}) {
 
   const tier = isRed ? "red" : isYellow ? "yellow" : "green";
 
-  // Build recommended actions
+  // Get candidate name for reservation links
+  const candidateName = variants.items?.[0]?.candidateMark || "unknown";
+
+  // Build reservation links
+  const { claimLinks, domainLinks } = buildReservationLinks(candidateName, checks);
+  const hasDomainChecks = checks.some((c) => c.namespace === "domain");
+
+  // Build recommended actions (with links)
   if (tier === "green") {
     recommendedActions.push({
       type: "claim_handles",
       label: "Claim namespace handles now",
       details: `All ${available.length} namespaces are available. Reserve them before someone else does.`,
+      links: claimLinks,
     });
-    recommendedActions.push({
-      type: "reserve_domain",
-      label: "Consider reserving a domain",
-      details: "Domain availability was not checked. Consider registering a matching domain.",
-    });
+    if (!hasDomainChecks) {
+      recommendedActions.push({
+        type: "reserve_domain",
+        label: "Consider reserving a domain",
+        details: "Domain availability was not checked. Consider registering a matching domain.",
+        links: [
+          `https://www.namecheap.com/domains/registration/results/?domain=${encodeURIComponent(candidateName)}.com`,
+          `https://www.namecheap.com/domains/registration/results/?domain=${encodeURIComponent(candidateName)}.dev`,
+        ],
+      });
+    } else if (domainLinks.length > 0) {
+      recommendedActions.push({
+        type: "reserve_domain",
+        label: "Reserve available domains",
+        details: "Some domains are available for registration.",
+        links: domainLinks,
+      });
+    }
   } else if (tier === "yellow") {
     if (unknown.length > 0) {
       recommendedActions.push({
         type: "expand_search_coverage",
         label: "Re-run checks for unavailable namespaces",
         details: `${unknown.length} check(s) failed. Re-run when network is available.`,
+        links: [],
       });
     }
     recommendedActions.push({
       type: "consult_counsel",
       label: "Review near-conflicts with counsel",
       details: "Some potential conflicts were detected. A trademark professional can assess risk.",
+      links: [],
     });
   } else {
     // RED
@@ -159,11 +218,13 @@ export function scoreOpinion(data, opts = {}) {
       type: "pick_variant",
       label: "Consider alternative names",
       details: "The candidate name has direct conflicts. Evaluate variant forms or choose a different name.",
+      links: [],
     });
     recommendedActions.push({
       type: "consult_counsel",
       label: "Consult trademark counsel before proceeding",
       details: "Strong conflicts detected. Professional legal review is strongly recommended.",
+      links: [],
     });
   }
 
@@ -179,9 +240,11 @@ export function scoreOpinion(data, opts = {}) {
   limitations.push(
     "This engine does not check trademark databases (USPTO, EUIPO, etc.)."
   );
-  limitations.push(
-    "Domain name availability is not checked in this version."
-  );
+  if (!hasDomainChecks) {
+    limitations.push(
+      "Domain name availability is not checked in this version."
+    );
+  }
   if (unknown.length > 0) {
     limitations.push(
       `${unknown.length} namespace(s) could not be checked due to network errors.`
@@ -200,6 +263,9 @@ export function scoreOpinion(data, opts = {}) {
         ? `Some concerns found for "${candidateNames}". ${reasons.length} issue(s) need review before proceeding.`
         : `Conflicts detected for "${candidateNames}". ${reasons.length} blocking issue(s) found. Name change recommended.`;
 
+  // Compute explainable score breakdown
+  const scoreBreakdown = computeScoreBreakdown(data, opts);
+
   return {
     tier,
     summary,
@@ -208,6 +274,7 @@ export function scoreOpinion(data, opts = {}) {
     limitations,
     recommendedActions,
     closestConflicts,
+    scoreBreakdown,
   };
 }
 

@@ -655,6 +655,77 @@
             "$ref": "#/$defs/closestConflict"
           },
           "default": []
+        },
+        "scoreBreakdown": {
+          "$ref": "#/$defs/scoreBreakdown",
+          "description": "Explainable sub-scores and weighted overall score."
+        }
+      }
+    },
+    "scoreBreakdown": {
+      "type": "object",
+      "required": [
+        "overallScore"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "namespaceAvailability": {
+          "$ref": "#/$defs/subScore"
+        },
+        "coverageCompleteness": {
+          "$ref": "#/$defs/subScore"
+        },
+        "conflictSeverity": {
+          "$ref": "#/$defs/subScore"
+        },
+        "domainAvailability": {
+          "$ref": "#/$defs/subScore"
+        },
+        "overallScore": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "tierThresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "green": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "yellow": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        }
+      }
+    },
+    "subScore": {
+      "type": "object",
+      "required": [
+        "score",
+        "weight",
+        "details"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "details": {
+          "type": "string",
+          "maxLength": 400
         }
       }
     },

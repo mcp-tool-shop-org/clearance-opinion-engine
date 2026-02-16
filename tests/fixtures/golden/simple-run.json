@@ -2,13 +2,13 @@
   "schemaVersion": "1.0.0",
   "run": {
     "runId": "run.2026-02-15.4fcb37c5",
-    "engineVersion": "0.1.0",
+    "engineVersion": "0.2.0",
     "createdAt": "2026-02-15T12:00:00.000Z",
     "inputsSha256": "4fcb37c520609059425177fdc35972263237624e267f39e25c7a7e91bf1560ca",
     "adapterVersions": {
-      "github": "0.1.0",
-      "npm": "0.1.0",
-      "pypi": "0.1.0"
+      "github": "0.2.0",
+      "npm": "0.2.0",
+      "pypi": "0.2.0"
     }
   },
   "intake": {
@@ -188,14 +188,50 @@
       {
         "type": "claim_handles",
         "label": "Claim namespace handles now",
-        "details": "All 3 namespaces are available. Reserve them before someone else does."
+        "details": "All 3 namespaces are available. Reserve them before someone else does.",
+        "links": [
+          "https://github.com/new",
+          "https://www.npmjs.com/package/golden-test",
+          "https://pypi.org/project/golden-test/"
+        ]
       },
       {
         "type": "reserve_domain",
         "label": "Consider reserving a domain",
-        "details": "Domain availability was not checked. Consider registering a matching domain."
+        "details": "Domain availability was not checked. Consider registering a matching domain.",
+        "links": [
+          "https://www.namecheap.com/domains/registration/results/?domain=golden-test.com",
+          "https://www.namecheap.com/domains/registration/results/?domain=golden-test.dev"
+        ]
       }
     ],
-    "closestConflicts": []
+    "closestConflicts": [],
+    "scoreBreakdown": {
+      "namespaceAvailability": {
+        "score": 100,
+        "weight": 40,
+        "details": "3/3 namespaces available"
+      },
+      "coverageCompleteness": {
+        "score": 75,
+        "weight": 25,
+        "details": "3/4 channels checked (domain not checked)"
+      },
+      "conflictSeverity": {
+        "score": 100,
+        "weight": 25,
+        "details": "No conflicts detected"
+      },
+      "domainAvailability": {
+        "score": 50,
+        "weight": 10,
+        "details": "Domain not checked"
+      },
+      "overallScore": 89,
+      "tierThresholds": {
+        "green": 80,
+        "yellow": 50
+      }
+    }
   }
 }

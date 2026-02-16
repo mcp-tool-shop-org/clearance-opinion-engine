@@ -8,9 +8,11 @@ import { dirname } from "node:path";
 import { createGitHubAdapter } from "../../src/adapters/github.mjs";
 import { createNpmAdapter } from "../../src/adapters/npm.mjs";
 import { createPyPIAdapter } from "../../src/adapters/pypi.mjs";
+import { createDomainAdapter } from "../../src/adapters/domain.mjs";
 import { generateAllVariants } from "../../src/variants/index.mjs";
 import { scoreOpinion, classifyFindings } from "../../src/scoring/opinion.mjs";
 import { writeRun, renderRunMd } from "../../src/renderers/report.mjs";
+import { renderPacketHtml, renderSummaryJson } from "../../src/renderers/packet.mjs";
 import { hashObject } from "../../src/lib/hash.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -20,7 +22,7 @@ const goldenDir = join(fixturesDir, "golden");
 
 // Fixed timestamp for determinism
 const NOW = "2026-02-15T12:00:00.000Z";
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 // ── Mock fetch factories ───────────────────────────────────────
 
@@ -62,6 +64,7 @@ function networkErrorFetch() {
 async function runPipeline(candidateName, fetchFn, opts = {}) {
   const org = opts.org || null;
   const riskTolerance = opts.riskTolerance || "conservative";
+  const includeDomain = opts.includeDomain || false;
 
   const intake = {
     candidates: [{ mark: candidateName, style: "word" }],
@@ -99,6 +102,16 @@ async function runPipeline(candidateName, fetchFn, opts = {}) {
   allChecks.push(pypiResult.check);
   allEvidence.push(pypiResult.evidence);
 
+  // Domain (optional)
+  if (includeDomain) {
+    const domain = createDomainAdapter(fetchFn);
+    for (const tld of domain.tlds) {
+      const result = await domain.checkDomain(candidateName, tld, { now: NOW });
+      allChecks.push(result.check);
+      allEvidence.push(result.evidence);
+    }
+  }
+
   // Classify + score
   const findings = classifyFindings(allChecks, variants);
   const opinion = scoreOpinion(
@@ -109,6 +122,9 @@ async function runPipeline(candidateName, fetchFn, opts = {}) {
   const inputsSha256 = hashObject(intake);
   const runId = `run.2026-02-15.${inputsSha256.slice(0, 8)}`;
 
+  const adapterVersions = { github: VERSION, npm: VERSION, pypi: VERSION };
+  if (includeDomain) adapterVersions.domain = VERSION;
+
   return {
     schemaVersion: "1.0.0",
     run: {
@@ -116,7 +132,7 @@ async function runPipeline(candidateName, fetchFn, opts = {}) {
       engineVersion: VERSION,
       createdAt: NOW,
       inputsSha256,
-      adapterVersions: { github: VERSION, npm: VERSION, pypi: VERSION },
+      adapterVersions,
     },
     intake,
     variants,
@@ -202,14 +218,16 @@ describe("E2E: full pipeline", () => {
     assert.equal(hashObject(run1), hashObject(run2));
   });
 
-  it("writeRun produces JSON + Markdown files", async () => {
+  it("writeRun produces JSON + Markdown + HTML + Summary files", async () => {
     const run = await runPipeline("write-test", allAvailableFetch());
     const outDir = join(tmpDir, "write-test");
 
-    const { jsonPath, mdPath } = writeRun(run, outDir);
+    const { jsonPath, mdPath, htmlPath, summaryPath } = writeRun(run, outDir);
 
     assert.ok(existsSync(jsonPath));
     assert.ok(existsSync(mdPath));
+    assert.ok(existsSync(htmlPath));
+    assert.ok(existsSync(summaryPath));
 
     // JSON round-trips correctly
     const parsed = JSON.parse(readFileSync(jsonPath, "utf8"));
@@ -221,6 +239,17 @@ describe("E2E: full pipeline", () => {
     assert.ok(md.includes("# Clearance Report"));
     assert.ok(md.includes("## Opinion"));
     assert.ok(md.includes("## Namespace Checks"));
+    assert.ok(md.includes("### Score Breakdown"));
+
+    // HTML is valid
+    const html = readFileSync(htmlPath, "utf8");
+    assert.ok(html.startsWith("<!DOCTYPE html>"));
+    assert.ok(html.includes("Why This Tier?"));
+
+    // Summary JSON is valid
+    const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
+    assert.equal(summary.tier, "green");
+    assert.ok(typeof summary.overallScore === "number");
   });
 
   it("run.json matches schema structure", async () => {
@@ -289,5 +318,61 @@ describe("E2E: full pipeline", () => {
     assert.ok(namespaces.includes("github_repo"));
     assert.ok(namespaces.includes("npm"));
     assert.ok(namespaces.includes("pypi"));
+  });
+
+  // ── Phase 2 tests ──────────────────────────────────────────────
+
+  it("domain channel produces domain namespace checks", async () => {
+    const run = await runPipeline("domain-test", allAvailableFetch(), {
+      includeDomain: true,
+    });
+
+    const domainChecks = run.checks.filter((c) => c.namespace === "domain");
+    assert.ok(domainChecks.length >= 2, "Should have at least 2 domain checks (.com + .dev)");
+    assert.ok(domainChecks.every((c) => c.status === "available"));
+    assert.ok(domainChecks.every((c) => c.claimability === "claimable_now"));
+
+    // Domain evidence should exist
+    const domainEvidence = run.evidence.filter((e) => e.source.system === "rdap");
+    assert.ok(domainEvidence.length >= 2);
+  });
+
+  it("opinion includes scoreBreakdown with overallScore", async () => {
+    const run = await runPipeline("score-test", allAvailableFetch());
+
+    assert.ok(run.opinion.scoreBreakdown);
+    assert.ok(typeof run.opinion.scoreBreakdown.overallScore === "number");
+    assert.ok(run.opinion.scoreBreakdown.overallScore >= 0);
+    assert.ok(run.opinion.scoreBreakdown.overallScore <= 100);
+
+    // Sub-scores exist
+    assert.ok(run.opinion.scoreBreakdown.namespaceAvailability);
+    assert.ok(run.opinion.scoreBreakdown.coverageCompleteness);
+    assert.ok(run.opinion.scoreBreakdown.conflictSeverity);
+    assert.ok(run.opinion.scoreBreakdown.domainAvailability);
+
+    // Tier thresholds
+    assert.ok(run.opinion.scoreBreakdown.tierThresholds);
+    assert.ok(typeof run.opinion.scoreBreakdown.tierThresholds.green === "number");
+    assert.ok(typeof run.opinion.scoreBreakdown.tierThresholds.yellow === "number");
+  });
+
+  it("recommendedActions include links array", async () => {
+    const run = await runPipeline("links-test", allAvailableFetch());
+
+    assert.equal(run.opinion.tier, "green");
+    const claimAction = run.opinion.recommendedActions.find(
+      (a) => a.type === "claim_handles"
+    );
+    assert.ok(claimAction, "Should have claim_handles action");
+    assert.ok(Array.isArray(claimAction.links));
+    assert.ok(claimAction.links.length > 0, "Links should be populated for GREEN tier");
+  });
+
+  it("renderPacketHtml is deterministic", async () => {
+    const run = await runPipeline("html-determinism", allAvailableFetch());
+    const html1 = renderPacketHtml(run);
+    const html2 = renderPacketHtml(run);
+    assert.equal(html1, html2);
   });
 });

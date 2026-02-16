@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"objectClassName\":\"domain\",\"handle\":\"EXAMPLE-1\",\"ldhName\":\"example.com\",\"status\":[\"active\",\"transfer prohibited\"],\"events\":[{\"eventAction\":\"registration\",\"eventDate\":\"2020-01-01T00:00:00Z\"}],\"rdapConformance\":[\"rdap_level_0\"]}"
+}

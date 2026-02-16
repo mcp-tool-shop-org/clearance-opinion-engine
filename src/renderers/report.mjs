@@ -1,18 +1,19 @@
 /**
  * Report renderer for clearance-opinion-engine.
  *
- * Produces dual JSON + Markdown output from a run object.
+ * Produces JSON + Markdown + HTML + Summary JSON from a run object.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { renderPacketHtml, renderSummaryJson } from "./packet.mjs";
 
 /**
- * Write a run to disk as JSON + Markdown.
+ * Write a run to disk as JSON + Markdown + HTML + Summary.
  *
  * @param {object} run - Complete run object (per schema)
  * @param {string} outDir - Directory to write files to
- * @returns {{ jsonPath: string, mdPath: string }}
+ * @returns {{ jsonPath: string, mdPath: string, htmlPath: string, summaryPath: string }}
  */
 export function writeRun(run, outDir) {
   mkdirSync(outDir, { recursive: true });
@@ -23,7 +24,14 @@ export function writeRun(run, outDir) {
   const mdPath = join(outDir, "run.md");
   writeFileSync(mdPath, renderRunMd(run), "utf8");
 
-  return { jsonPath, mdPath };
+  const htmlPath = join(outDir, "report.html");
+  writeFileSync(htmlPath, renderPacketHtml(run), "utf8");
+
+  const summaryPath = join(outDir, "summary.json");
+  const summaryObj = renderSummaryJson(run);
+  writeFileSync(summaryPath, JSON.stringify(summaryObj, null, 2) + "\n", "utf8");
+
+  return { jsonPath, mdPath, htmlPath, summaryPath };
 }
 
 /**
@@ -61,6 +69,36 @@ export function renderRunMd(run) {
     for (const r of opinion.reasons) {
       lines.push(`- ${r}`);
     }
+    lines.push("");
+  }
+
+  // Score Breakdown
+  const breakdown = opinion.scoreBreakdown;
+  if (breakdown && breakdown.overallScore !== undefined) {
+    lines.push("### Score Breakdown");
+    lines.push("");
+    lines.push("| Factor | Score | Weight | Details |");
+    lines.push("|--------|-------|--------|---------|");
+
+    const factors = [
+      ["Namespace Availability", breakdown.namespaceAvailability],
+      ["Coverage Completeness", breakdown.coverageCompleteness],
+      ["Conflict Severity", breakdown.conflictSeverity],
+      ["Domain Availability", breakdown.domainAvailability],
+    ];
+
+    for (const [label, sub] of factors) {
+      if (sub) {
+        lines.push(`| ${label} | ${sub.score}/100 | ${sub.weight}% | ${sub.details} |`);
+      }
+    }
+    lines.push("");
+
+    let overallLine = `**Overall Score: ${breakdown.overallScore}/100**`;
+    if (breakdown.tierThresholds) {
+      overallLine += ` (Green threshold: ${breakdown.tierThresholds.green})`;
+    }
+    lines.push(overallLine);
     lines.push("");
   }
 
@@ -134,6 +172,11 @@ export function renderRunMd(run) {
       const a = opinion.recommendedActions[i];
       lines.push(`${i + 1}. **${a.label}** (\`${a.type}\`)`);
       if (a.details) lines.push(`   ${a.details}`);
+      if (a.links?.length > 0) {
+        for (const link of a.links) {
+          lines.push(`   - ${link}`);
+        }
+      }
     }
     lines.push("");
   }

@@ -1,0 +1,4 @@
+{
+  "status": 429,
+  "body": "{\"errorCode\":429,\"title\":\"Too Many Requests\",\"description\":[\"Rate limit exceeded\"]}"
+}
