@@ -2,7 +2,7 @@
 
 Deterministic "name availability + clearance opinion" engine.
 
-Given a candidate name, it checks real namespace availability (GitHub org/repo, npm, PyPI, domain via RDAP), generates linguistic variants (normalized, tokenized, phonetic, homoglyph), and produces a conservative clearance opinion (GREEN / YELLOW / RED) with an explainable score breakdown and full evidence chain.
+Given a candidate name, it checks real namespace availability (GitHub org/repo, npm, PyPI, domain via RDAP, crates.io, Docker Hub, Hugging Face), generates linguistic variants (normalized, tokenized, phonetic, homoglyph, fuzzy edit-distance=1), scans for similar names via collision radar (GitHub + npm search), queries registries for fuzzy variant conflicts, compares against user-provided known marks, and produces a conservative clearance opinion (GREEN / YELLOW / RED) with an explainable score breakdown, executive summary, coverage matrix, and full evidence chain.
 
 ---
 
@@ -25,8 +25,31 @@ Given a candidate name, it checks real namespace availability (GitHub org/repo, 
 | npm     | Package   | `GET https://registry.npmjs.org/{name}` → 404 = available |
 | PyPI    | Package   | `GET https://pypi.org/pypi/{name}/json` → 404 = available |
 | Domain  | `.com`, `.dev` | RDAP (RFC 9083) via `rdap.org` → 404 = available |
+| crates.io | Crate   | `GET https://crates.io/api/v1/crates/{name}` → 404 = available |
+| Docker Hub | Repo   | `GET https://hub.docker.com/v2/repositories/{ns}/{name}` → 404 = available |
+| Hugging Face | Model | `GET https://huggingface.co/api/models/{owner}/{name}` → 404 = available |
+| Hugging Face | Space | `GET https://huggingface.co/api/spaces/{owner}/{name}` → 404 = available |
 
-All adapter calls use exponential backoff retry (2 retries, 500ms base delay).
+### Channel groups
+
+| Group | Channels |
+|-------|----------|
+| `core` (default) | github, npm, pypi, domain |
+| `dev` | cratesio, dockerhub |
+| `ai` | huggingface |
+| `all` | all channels |
+
+Use `--channels <group>` for presets, or `--channels +cratesio,+dockerhub` for additive syntax (adds to default).
+
+### Indicative signals (opt-in)
+
+| Source | What it searches | Method |
+|--------|-----------------|--------|
+| Collision Radar | GitHub repos | `GET /search/repositories?q={name}` → similarity scoring |
+| Collision Radar | npm packages | `GET /-/v1/search?text={name}` → similarity scoring |
+| Corpus | User-provided marks | Offline Jaro-Winkler + Metaphone comparison |
+
+All adapter calls use exponential backoff retry (2 retries, 500ms base delay). Opt-in disk caching reduces repeated API calls.
 
 ---
 
@@ -39,14 +62,15 @@ All adapter calls use exponential backoff retry (2 retries, 500ms base delay).
 | Normalized | `My Cool Tool` | `my-cool-tool` |
 | Tokenized | `my-cool-tool` | `["my", "cool", "tool"]` |
 | Phonetic (Metaphone) | `["my", "cool", "tool"]` | `["M", "KL", "TL"]` |
-| Homoglyphs | `my-cool-tool` | `["my-c00l-tool", "my-co0l-t00l"]` |
+| Homoglyphs | `my-cool-tool` | `["my-c00l-tool", "my-co0l-t00l"]` (ASCII + Cyrillic + Greek) |
+| Fuzzy (edit-distance=1) | `my-cool-tool` | `["my-cool-too", "my-cool-tools", ...]` |
 
 ### Opinion tiers
 
 | Tier | Meaning |
 |------|---------|
 | 🟢 GREEN | All namespaces available, no phonetic/homoglyph conflicts |
-| 🟡 YELLOW | Some checks inconclusive (network) or near-conflicts found |
+| 🟡 YELLOW | Some checks inconclusive (network), near-conflicts, or fuzzy variant taken |
 | 🔴 RED | Exact conflict, phonetic collision, or high confusable risk |
 
 ### Score breakdown
@@ -57,7 +81,7 @@ Each opinion includes a weighted score breakdown for explainability:
 |-----------|-----------------|
 | Namespace Availability | Fraction of checked namespaces that are available |
 | Coverage Completeness | How many namespace types were checked (out of 4) |
-| Conflict Severity | Penalty for exact, phonetic, confusable, and near conflicts |
+| Conflict Severity | Penalty for exact, phonetic, confusable, near, and variant-taken conflicts |
 | Domain Availability | Fraction of checked TLDs with available domains |
 
 Weight profiles (`--risk` flag): **conservative** (default), **balanced**, **aggressive**. Higher risk tolerance lowers the thresholds for GREEN/YELLOW tiers and shifts weight toward namespace availability.
@@ -85,14 +109,14 @@ A self-contained HTML report suitable for sharing with counsel. Includes the ful
 
 ### Summary JSON (`summary.json`)
 
-A condensed output for integrations: tier, overall score, namespace statuses, findings summary, and recommended actions.
+A condensed output for integrations: tier, overall score, namespace statuses, findings summary, collision radar count, corpus match count, fuzzy variants taken count, and recommended actions.
 
 ---
 
 ## Usage
 
 ```bash
-# Check a name across all channels (github, npm, pypi, domain)
+# Check a name across default channels (github, npm, pypi, domain)
 node src/index.mjs check my-cool-tool
 
 # Check specific channels only
@@ -100,6 +124,19 @@ node src/index.mjs check my-cool-tool --channels github,npm
 
 # Skip domain checks
 node src/index.mjs check my-cool-tool --channels github,npm,pypi
+
+# Add crates.io to default channels
+node src/index.mjs check my-cool-tool --channels +cratesio
+
+# Add multiple ecosystem channels
+node src/index.mjs check my-cool-tool --channels +cratesio,+dockerhub --dockerNamespace myorg
+
+# Check all channels (requires --dockerNamespace and --hfOwner for full coverage)
+node src/index.mjs check my-cool-tool --channels all --dockerNamespace myorg --hfOwner myuser
+
+# Use channel group presets
+node src/index.mjs check my-cool-tool --channels dev    # cratesio + dockerhub
+node src/index.mjs check my-cool-tool --channels ai     # huggingface
 
 # Check within a specific GitHub org
 node src/index.mjs check my-cool-tool --org mcp-tool-shop-org
@@ -115,6 +152,21 @@ node src/index.mjs replay reports/2026-02-15
 
 # Specify output directory
 node src/index.mjs check my-cool-tool --output ./my-reports
+
+# Enable collision radar (GitHub + npm search for similar names)
+node src/index.mjs check my-cool-tool --radar
+
+# Compare against a corpus of known marks
+node src/index.mjs check my-cool-tool --corpus marks.json
+
+# Enable caching (reduces API calls on repeated runs)
+node src/index.mjs check my-cool-tool --cache-dir .coe-cache
+
+# Disable fuzzy variant registry queries
+node src/index.mjs check my-cool-tool --fuzzyQueryMode off
+
+# Full pipeline: all channels + radar + corpus + cache
+node src/index.mjs check my-cool-tool --channels all --dockerNamespace myorg --hfOwner myuser --radar --corpus marks.json --cache-dir .coe-cache
 ```
 
 ### Replay command
@@ -140,10 +192,18 @@ No config file required. All options are CLI flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--channels` | `github,npm,pypi,domain` | Comma-separated list of channels to check |
+| `--channels` | `github,npm,pypi,domain` | Channels to check. Accepts explicit list, group name (`core`, `dev`, `ai`, `all`), or additive (`+cratesio,+dockerhub`) |
 | `--org` | _(none)_ | GitHub org to check for org-name availability |
 | `--risk` | `conservative` | Risk tolerance: `conservative`, `balanced`, `aggressive` |
 | `--output` | `reports/` | Output directory for run artifacts |
+| `--radar` | _(off)_ | Enable collision radar (GitHub + npm search for similar names) |
+| `--corpus` | _(none)_ | Path to JSON corpus of known marks to compare against |
+| `--cache-dir` | _(off)_ | Directory for caching adapter responses |
+| `--max-age-hours` | `24` | Cache TTL in hours (requires `--cache-dir`) |
+| `--dockerNamespace` | _(none)_ | Docker Hub namespace (user/org) — required when `dockerhub` channel is enabled |
+| `--hfOwner` | _(none)_ | Hugging Face owner (user/org) — required when `huggingface` channel is enabled |
+| `--fuzzyQueryMode` | `registries` | Fuzzy variant query mode: `off`, `registries`, `all` |
+| `--variantBudget` | `12` | Max fuzzy variants to query per registry (max: 30) |
 
 ### Environment variables
 
@@ -184,6 +244,16 @@ All tests use fixture-injected adapters (zero network calls). Golden snapshots e
 | `COE.ADAPTER.PYPI_FAIL` | PyPI API returned unexpected error |
 | `COE.ADAPTER.DOMAIN_FAIL` | RDAP lookup failed |
 | `COE.ADAPTER.DOMAIN_RATE_LIMITED` | RDAP rate limit exceeded (HTTP 429) |
+| `COE.ADAPTER.CRATESIO_FAIL` | crates.io API returned unexpected error |
+| `COE.ADAPTER.DOCKERHUB_FAIL` | Docker Hub API returned unexpected error |
+| `COE.ADAPTER.HF_FAIL` | Hugging Face API returned unexpected error |
+| `COE.ADAPTER.RADAR_GITHUB_FAIL` | GitHub Search API unreachable |
+| `COE.ADAPTER.RADAR_NPM_FAIL` | npm Search API unreachable |
+| `COE.DOCKER.NAMESPACE_REQUIRED` | Docker Hub channel enabled without `--dockerNamespace` |
+| `COE.HF.OWNER_REQUIRED` | Hugging Face channel enabled without `--hfOwner` |
+| `COE.VARIANT.FUZZY_HIGH` | Fuzzy variant count exceeds threshold (informational) |
+| `COE.CORPUS.INVALID` | Corpus file has invalid format |
+| `COE.CORPUS.NOT_FOUND` | Corpus file not found at specified path |
 | `COE.RENDER.WRITE_FAIL` | Could not write output files |
 | `COE.LOCK.MISMATCH` | Lockfile verification failed (tampered) |
 | `COE.REPLAY.NO_RUN` | No `run.json` in replay directory |
@@ -209,8 +279,13 @@ See [docs/RUNBOOK.md](docs/RUNBOOK.md) for the complete error reference and trou
 
 - Not legal advice — not a trademark search or substitute for professional counsel
 - No trademark database checks (USPTO, EUIPO, WIPO)
+- Collision radar is indicative (market-usage signals), not authoritative trademark searching
+- Corpus comparison is against user-provided marks only, not an exhaustive database
 - Domain checks cover `.com` and `.dev` only
+- Docker Hub requires `--dockerNamespace`; Hugging Face requires `--hfOwner`
+- Fuzzy variants are edit-distance=1 only; queries limited to npm, PyPI, crates.io
 - Phonetic analysis is English-centric (Metaphone algorithm)
+- Homoglyph detection covers ASCII + Cyrillic + Greek (not all Unicode scripts)
 - No social media handle checks
 - All checks are point-in-time snapshots
 

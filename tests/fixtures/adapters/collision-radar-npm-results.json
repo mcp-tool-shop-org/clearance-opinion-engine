@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"objects\":[{\"package\":{\"name\":\"my-cool-tool\",\"version\":\"1.0.0\",\"description\":\"A cool tool\"}},{\"package\":{\"name\":\"my-kewl-tool\",\"version\":\"0.1.0\",\"description\":\"Another tool\"}},{\"package\":{\"name\":\"unrelated-pkg\",\"version\":\"2.0.0\",\"description\":\"Not related\"}}],\"total\":3}"
+}

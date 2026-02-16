@@ -38,6 +38,12 @@ function buildReservationLinks(candidateName, checks) {
       claimLinks.push("https://github.com/new");
     } else if (c.namespace === "github_org") {
       claimLinks.push("https://github.com/organizations/new");
+    } else if (c.namespace === "cratesio") {
+      claimLinks.push(`https://crates.io/crates/${encodedName}`);
+    } else if (c.namespace === "dockerhub") {
+      claimLinks.push("https://hub.docker.com/");
+    } else if (c.namespace === "huggingface_model" || c.namespace === "huggingface_space") {
+      claimLinks.push("https://huggingface.co/new");
     } else if (c.namespace === "domain") {
       const fqdn = c.query?.value || `${candidateName}.com`;
       domainLinks.push(`https://www.namecheap.com/domains/registration/results/?domain=${encodeURIComponent(fqdn)}`);
@@ -75,6 +81,7 @@ export function scoreOpinion(data, opts = {}) {
   const confusableRisks = findings.filter((f) => f.kind === "confusable_risk");
   const nearConflicts = findings.filter((f) => f.kind === "near_conflict");
   const coverageGaps = findings.filter((f) => f.kind === "coverage_gap");
+  const variantTaken = findings.filter((f) => f.kind === "variant_taken");
 
   // --- RED conditions ---
   if (exactConflicts.length > 0) {
@@ -148,11 +155,19 @@ export function scoreOpinion(data, opts = {}) {
     );
   }
 
+  // Variant-taken: fuzzy edit-distance=1 variant is taken → YELLOW (never RED by itself)
+  if (variantTaken.length > 0) {
+    reasons.push(
+      `Variant taken: ${variantTaken.length} fuzzy variant(s) found in registries`
+    );
+  }
+
   const isYellow =
     !isRed &&
     (unknown.length > 0 ||
       nearConflicts.length > 0 ||
       coverageGaps.length > 0 ||
+      variantTaken.length > 0 ||
       (!multipleConfusable && confusableRisks.length > 0));
 
   // --- GREEN conditions ---
@@ -251,6 +266,26 @@ export function scoreOpinion(data, opts = {}) {
     );
   }
 
+  // Collision radar + corpus limitations
+  const hasCollisionRadar = checks.some((c) => c.namespace === "custom" && c.details?.source);
+  const hasCorpus = data.evidence?.some?.((e) => e.source?.system === "user_corpus");
+
+  if (hasCollisionRadar) {
+    limitations.push(
+      "Collision radar results are indicative market-usage signals, not trademark searches."
+    );
+  }
+  if (hasCorpus) {
+    limitations.push(
+      "Corpus comparison is against user-provided marks only, not an exhaustive trademark database."
+    );
+  }
+  if (!hasCollisionRadar && !hasCorpus) {
+    limitations.push(
+      "No market-usage signal search was performed. Use --radar to enable."
+    );
+  }
+
   // Build summary
   const tierLabel = tier === "green" ? "GREEN" : tier === "yellow" ? "YELLOW" : "RED";
   const candidateNames = variants.items
@@ -297,7 +332,42 @@ export function classifyFindings(checks, variants) {
 
     const candidateMark = check.query?.candidateMark || "unknown";
 
-    // Exact conflict: name is taken in this namespace
+    // Collision radar checks (custom namespace with similarity details):
+    // Produce near_conflict or phonetic_conflict based on similarity scores.
+    // These are NOT exact conflicts — they are indicative market-usage signals.
+    if (check.namespace === "custom" && check.details?.similarity) {
+      const comparison = check.details.similarity;
+      const source = check.details.source || "unknown";
+
+      let kind = "near_conflict";
+      let severity = "medium";
+
+      if (comparison.sounds?.score >= 0.85) {
+        kind = "phonetic_conflict";
+        severity = "high";
+      } else if (comparison.overall >= 0.85) {
+        kind = "near_conflict";
+        severity = "high";
+      }
+
+      findings.push({
+        id: `fd.${kind.replace(/_/g, "-")}.${check.namespace}.${findingIdx}`,
+        candidateMark,
+        kind,
+        summary: `Name "${check.query.value}" is in use (${source}), similarity: ${comparison.overall?.toFixed(2) || "?"}`,
+        severity,
+        score: Math.round((comparison.overall || 0) * 100),
+        why: [
+          ...(comparison.why || []),
+          `Market usage signal from ${source}`,
+        ],
+        evidenceRefs: check.evidenceRef ? [check.evidenceRef] : [],
+      });
+      findingIdx++;
+      continue;
+    }
+
+    // Exact conflict: name is taken in this namespace (authoritative checks)
     findings.push({
       id: `fd.exact-conflict.${check.namespace}.${findingIdx}`,
       candidateMark,
@@ -334,6 +404,28 @@ export function classifyFindings(checks, variants) {
         }
       }
     }
+  }
+
+  // Variant-taken: base name available but fuzzy edit-distance=1 variant is taken.
+  // These come from checks where query.isVariant === true.
+  const variantTakenChecks = checks.filter(
+    (c) => c.query?.isVariant && c.status === "taken"
+  );
+  for (const c of variantTakenChecks) {
+    findings.push({
+      id: `fd.variant-taken.${c.namespace}.${findingIdx}`,
+      candidateMark: c.query.originalCandidate || c.query.candidateMark,
+      kind: "variant_taken",
+      summary: `Fuzzy variant "${c.query.value}" is taken in ${c.namespace}`,
+      severity: "medium",
+      score: 60,
+      why: [
+        `Edit-distance=1 variant "${c.query.value}" exists in ${c.namespace}`,
+        "Typosquatting or confusion risk",
+      ],
+      evidenceRefs: c.evidenceRef ? [c.evidenceRef] : [],
+    });
+    findingIdx++;
   }
 
   return findings;

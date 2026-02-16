@@ -144,6 +144,61 @@ export function renderPacketHtml(run) {
   lines.push(`<p>${escapeHtml(opinion.summary || "")}</p>`);
   lines.push("</section>");
 
+  // Executive Summary
+  {
+    const availableCount = (run.checks || []).filter((c) => c.status === "available").length;
+    const takenCount = (run.checks || []).filter((c) => c.status === "taken").length;
+    const unknownCount = (run.checks || []).filter((c) => c.status === "unknown").length;
+    const totalChecks = (run.checks || []).length;
+    const findingsCount = (run.findings || []).length;
+
+    lines.push('<section class="executive-summary">');
+    lines.push("<h2>Executive Summary</h2>");
+    lines.push("<table>");
+    lines.push("<tr><th>Metric</th><th>Value</th></tr>");
+    lines.push(`<tr><td>Tier</td><td>${tierEmoji(tier)} ${escapeHtml(tier.toUpperCase())}</td></tr>`);
+    if (breakdown.overallScore !== undefined) {
+      lines.push(`<tr><td>Overall Score</td><td>${breakdown.overallScore}/100</td></tr>`);
+    }
+    lines.push(`<tr><td>Namespaces Checked</td><td>${totalChecks}</td></tr>`);
+    lines.push(`<tr><td>Available</td><td>${availableCount}</td></tr>`);
+    lines.push(`<tr><td>Taken</td><td>${takenCount}</td></tr>`);
+    lines.push(`<tr><td>Unknown</td><td>${unknownCount}</td></tr>`);
+    lines.push(`<tr><td>Findings</td><td>${findingsCount}</td></tr>`);
+    lines.push("</table>");
+
+    if (opinion.recommendedActions?.length > 0) {
+      lines.push(`<p><strong>Top Action:</strong> ${escapeHtml(opinion.recommendedActions[0].label)}</p>`);
+    }
+    if (opinion.closestConflicts?.length > 0) {
+      const topConflicts = opinion.closestConflicts.slice(0, 2);
+      lines.push("<p><strong>Top Conflicts:</strong></p>");
+      lines.push("<ul>");
+      for (const cc of topConflicts) {
+        lines.push(`<li>${escapeHtml(cc.mark)} (${escapeHtml(cc.severity)})</li>`);
+      }
+      lines.push("</ul>");
+    }
+    lines.push("</section>");
+  }
+
+  // Coverage Matrix
+  {
+    lines.push('<section class="coverage-matrix">');
+    lines.push("<h2>Coverage Matrix</h2>");
+    lines.push("<table>");
+    lines.push("<tr><th>Source</th><th>Namespace</th><th>Status</th><th>Authority</th></tr>");
+    if (run.checks?.length > 0) {
+      for (const c of run.checks) {
+        const source = c.details?.source || c.namespace;
+        const cacheTag = c.cacheHit ? " (cached)" : "";
+        lines.push(`<tr><td>${escapeHtml(source)}</td><td>${escapeHtml(c.namespace)}</td><td>${statusIcon(c.status)} ${escapeHtml(c.status)}${cacheTag}</td><td>${escapeHtml(c.authority)}</td></tr>`);
+      }
+    }
+    lines.push("</table>");
+    lines.push("</section>");
+  }
+
   // Score Breakdown ("Why This Tier?")
   if (breakdown.overallScore !== undefined) {
     lines.push('<section class="score-breakdown">');
@@ -215,6 +270,81 @@ export function renderPacketHtml(run) {
       lines.push("</div>");
     }
     lines.push("</section>");
+  }
+
+  // Collision Radar Signals (conditional)
+  {
+    const radarChecks = (run.checks || []).filter(
+      (c) => c.namespace === "custom" && (c.details?.source === "github_search" || c.details?.source === "npm_search")
+    );
+    if (radarChecks.length > 0) {
+      lines.push('<section class="collision-radar">');
+      lines.push("<h2>Collision Radar Signals</h2>");
+      lines.push("<p><em>Indicative market-usage signals &mdash; not authoritative trademark searches.</em></p>");
+      lines.push("<table>");
+      lines.push("<tr><th>Source</th><th>Name</th><th>Similarity</th><th>Looks</th><th>Sounds</th></tr>");
+      for (const c of radarChecks) {
+        const sim = c.details?.similarity;
+        const simScore = sim?.overall !== undefined ? `${(sim.overall * 100).toFixed(0)}%` : "-";
+        const source = escapeHtml(c.details?.source || "unknown");
+        const name = escapeHtml(c.query?.value || "");
+        const looksLabel = escapeHtml(sim?.looks?.label || "-");
+        const soundsLabel = escapeHtml(sim?.sounds?.label || "-");
+        lines.push(`<tr><td>${source}</td><td><code>${name}</code></td><td>${simScore}</td><td>${looksLabel}</td><td>${soundsLabel}</td></tr>`);
+      }
+      lines.push("</table>");
+      lines.push("</section>");
+    }
+  }
+
+  // Corpus Comparison (conditional)
+  {
+    const corpusEvidence = (run.evidence || []).filter(
+      (e) => e.source?.system === "user_corpus"
+    );
+    const corpusFindings = (run.findings || []).filter(
+      (f) => f.why?.some((w) => w.includes("Commercial impression"))
+    );
+    if (corpusEvidence.length > 0 || corpusFindings.length > 0) {
+      lines.push('<section class="corpus-comparison">');
+      lines.push("<h2>Corpus Comparison</h2>");
+      lines.push("<p><em>Comparison against user-provided known marks.</em></p>");
+      if (corpusFindings.length > 0) {
+        for (const f of corpusFindings) {
+          lines.push('<div class="finding-card">');
+          lines.push(`<div><span class="severity ${escapeAttr(f.severity)}">${severityLabel(f.severity)}</span> &mdash; <strong>${escapeHtml(f.kind)}</strong></div>`);
+          lines.push(`<div>${escapeHtml(f.summary)}</div>`);
+          if (f.why?.length > 0) {
+            lines.push("<ul>");
+            for (const w of f.why) {
+              lines.push(`<li>${escapeHtml(w)}</li>`);
+            }
+            lines.push("</ul>");
+          }
+          lines.push("</div>");
+        }
+      } else {
+        lines.push("<p>No similar marks found in the provided corpus.</p>");
+      }
+      lines.push("</section>");
+    }
+  }
+
+  // Fuzzy Variants Checked (conditional)
+  {
+    const fuzzyChecks = (run.checks || []).filter((c) => c.query?.isVariant);
+    if (fuzzyChecks.length > 0) {
+      lines.push('<section class="fuzzy-variants">');
+      lines.push("<h2>Fuzzy Variants Checked</h2>");
+      lines.push("<p><em>Edit-distance=1 variants queried against registries for typosquatting risk.</em></p>");
+      lines.push("<table>");
+      lines.push("<tr><th>Variant</th><th>Registry</th><th>Status</th></tr>");
+      for (const c of fuzzyChecks) {
+        lines.push(`<tr><td><code>${escapeHtml(c.query?.value || "")}</code></td><td>${escapeHtml(c.namespace)}</td><td>${statusIcon(c.status)} ${escapeHtml(c.status)}</td></tr>`);
+      }
+      lines.push("</table>");
+      lines.push("</section>");
+    }
   }
 
   // Evidence Chain
@@ -334,6 +464,21 @@ export function renderSummaryJson(run) {
     authority: c.authority,
   }));
 
+  // Count collision radar signals (custom namespace checks from github_search or npm_search)
+  const collisionRadarCount = (run.checks || []).filter(
+    (c) => c.namespace === "custom" && (c.details?.source === "github_search" || c.details?.source === "npm_search")
+  ).length;
+
+  // Count corpus matches (findings with "Commercial impression" in why[])
+  const corpusMatchCount = (run.findings || []).filter(
+    (f) => f.why?.some((w) => w.includes("Commercial impression"))
+  ).length;
+
+  // Count fuzzy variants that are taken
+  const fuzzyVariantsTaken = (run.findings || []).filter(
+    (f) => f.kind === "variant_taken"
+  ).length;
+
   return {
     generatedAt: run.run?.createdAt || new Date().toISOString(),
     engineVersion: run.run?.engineVersion || "unknown",
@@ -344,6 +489,9 @@ export function renderSummaryJson(run) {
     scoreBreakdown: opinion.scoreBreakdown || null,
     namespaces,
     findingsSummary,
+    collisionRadarCount,
+    corpusMatchCount,
+    fuzzyVariantsTaken,
     recommendedActions: opinion.recommendedActions || [],
     inputsSha256: run.run?.inputsSha256 || "unknown",
   };

@@ -139,6 +139,106 @@ describe("renderPacketHtml", () => {
     assert.ok(html.includes('target="_blank"'));
     assert.ok(html.includes('rel="noopener noreferrer"'));
   });
+
+  it("includes executive summary section", () => {
+    const html = renderPacketHtml(makeTestRun());
+    assert.ok(html.includes("Executive Summary"));
+    assert.ok(html.includes("Namespaces Checked"));
+    assert.ok(html.includes("executive-summary"));
+  });
+
+  it("includes coverage matrix section", () => {
+    const html = renderPacketHtml(makeTestRun());
+    assert.ok(html.includes("Coverage Matrix"));
+    assert.ok(html.includes("coverage-matrix"));
+    assert.ok(html.includes("authoritative"));
+  });
+
+  it("includes collision radar section when custom checks present", () => {
+    const run = makeTestRun({
+      checks: [
+        ...makeTestRun().checks,
+        {
+          id: "chk.collision-radar.github.0",
+          namespace: "custom",
+          query: { candidateMark: "my-cool-tool", value: "my-kool-tool" },
+          status: "taken",
+          authority: "indicative",
+          observedAt: "2026-02-15T12:00:00.000Z",
+          details: {
+            source: "github_search",
+            repoFullName: "user/my-kool-tool",
+            stars: 10,
+            similarity: {
+              looks: { score: 0.88, label: "high" },
+              sounds: { score: 0.92, label: "very high" },
+              overall: 0.90,
+            },
+          },
+          errors: [],
+        },
+      ],
+    });
+    const html = renderPacketHtml(run);
+    assert.ok(html.includes("Collision Radar Signals"));
+    assert.ok(html.includes("collision-radar"));
+    assert.ok(html.includes("github_search"));
+    assert.ok(html.includes("my-kool-tool"));
+  });
+
+  it("omits collision radar section when no custom checks", () => {
+    const html = renderPacketHtml(makeTestRun());
+    assert.ok(!html.includes("Collision Radar Signals"));
+    assert.ok(!html.includes("collision-radar"));
+  });
+
+  it("includes corpus comparison section when corpus evidence present", () => {
+    const run = makeTestRun({
+      evidence: [
+        ...makeTestRun().evidence,
+        {
+          id: "ev.corpus.0",
+          type: "text",
+          source: { system: "user_corpus" },
+          observedAt: "2026-02-15T12:00:00.000Z",
+          sha256: "c".repeat(64),
+          bytes: 50,
+        },
+      ],
+      findings: [
+        {
+          id: "fd.near-conflict.corpus.0",
+          candidateMark: "my-cool-tool",
+          kind: "near_conflict",
+          summary: 'Candidate "my-cool-tool" is similar to known mark "my-kool-tool"',
+          severity: "medium",
+          score: 75,
+          why: [
+            'Looks like "my-kool-tool" (Jaro-Winkler: 0.88, high)',
+            "Commercial impression: Looks like my-kool-tool, sounds like my-kool-tool",
+          ],
+          evidenceRefs: ["ev.corpus.0"],
+        },
+      ],
+    });
+    const html = renderPacketHtml(run);
+    assert.ok(html.includes("Corpus Comparison"));
+    assert.ok(html.includes("corpus-comparison"));
+    assert.ok(html.includes("Commercial impression"));
+  });
+
+  it("shows cache hit badge in coverage matrix", () => {
+    const run = makeTestRun({
+      checks: [
+        {
+          ...makeTestRun().checks[0],
+          cacheHit: true,
+        },
+      ],
+    });
+    const html = renderPacketHtml(run);
+    assert.ok(html.includes("(cached)"));
+  });
 });
 
 describe("renderSummaryJson", () => {
@@ -178,5 +278,66 @@ describe("renderSummaryJson", () => {
     const summary = renderSummaryJson(makeTestRun());
     assert.ok(summary.runId.startsWith("run."));
     assert.equal(summary.inputsSha256.length, 64);
+  });
+
+  it("includes collisionRadarCount (zero when no radar checks)", () => {
+    const summary = renderSummaryJson(makeTestRun());
+    assert.equal(summary.collisionRadarCount, 0);
+  });
+
+  it("includes collisionRadarCount (nonzero with radar checks)", () => {
+    const run = makeTestRun({
+      checks: [
+        ...makeTestRun().checks,
+        {
+          id: "chk.collision-radar.github.0",
+          namespace: "custom",
+          query: { candidateMark: "my-cool-tool", value: "my-kool-tool" },
+          status: "taken",
+          authority: "indicative",
+          observedAt: "2026-02-15T12:00:00.000Z",
+          details: {
+            source: "github_search",
+            repoFullName: "user/my-kool-tool",
+            stars: 10,
+            similarity: {
+              looks: { score: 0.88, label: "high" },
+              sounds: { score: 0.92, label: "very high" },
+              overall: 0.90,
+            },
+          },
+          errors: [],
+        },
+      ],
+    });
+    const summary = renderSummaryJson(run);
+    assert.equal(summary.collisionRadarCount, 1);
+  });
+
+  it("includes corpusMatchCount (zero when no corpus findings)", () => {
+    const summary = renderSummaryJson(makeTestRun());
+    assert.equal(summary.corpusMatchCount, 0);
+  });
+
+  it("includes corpusMatchCount (nonzero with corpus findings)", () => {
+    const run = makeTestRun({
+      findings: [
+        {
+          id: "fd.near-conflict.corpus.0",
+          candidateMark: "my-cool-tool",
+          kind: "near_conflict",
+          summary: 'Candidate "my-cool-tool" is similar to known mark "ReactJS"',
+          severity: "medium",
+          score: 75,
+          why: [
+            'Looks like "ReactJS" (Jaro-Winkler: 0.42, low)',
+            "Commercial impression: Looks like ReactJS, sounds like ReactJS",
+          ],
+          evidenceRefs: [],
+        },
+      ],
+    });
+    const summary = renderSummaryJson(run);
+    assert.equal(summary.corpusMatchCount, 1);
   });
 });

@@ -2,13 +2,13 @@
   "schemaVersion": "1.0.0",
   "run": {
     "runId": "run.2026-02-15.4fcb37c5",
-    "engineVersion": "0.2.0",
+    "engineVersion": "0.4.0",
     "createdAt": "2026-02-15T12:00:00.000Z",
     "inputsSha256": "4fcb37c520609059425177fdc35972263237624e267f39e25c7a7e91bf1560ca",
     "adapterVersions": {
-      "github": "0.2.0",
-      "npm": "0.2.0",
-      "pypi": "0.2.0"
+      "github": "0.4.0",
+      "npm": "0.4.0",
+      "pypi": "0.4.0"
     }
   },
   "intake": {
@@ -68,13 +68,70 @@
           {
             "type": "homoglyph-safe",
             "value": "golden-test"
+          },
+          {
+            "type": "fuzzy",
+            "value": "olden-test"
+          },
+          {
+            "type": "fuzzy",
+            "value": "glden-test"
+          },
+          {
+            "type": "fuzzy",
+            "value": "goden-test"
+          },
+          {
+            "type": "fuzzy",
+            "value": "golen-test"
+          },
+          {
+            "type": "fuzzy",
+            "value": "goldn-test"
           }
+        ],
+        "fuzzyVariants": [
+          "olden-test",
+          "glden-test",
+          "goden-test",
+          "golen-test",
+          "goldn-test",
+          "golde-test",
+          "goldentest",
+          "golden-est",
+          "golden-tst",
+          "golden-tet",
+          "golden-tes",
+          "-golden-test",
+          "0golden-test",
+          "1golden-test",
+          "2golden-test",
+          "3golden-test",
+          "4golden-test",
+          "5golden-test",
+          "6golden-test",
+          "7golden-test",
+          "8golden-test",
+          "9golden-test",
+          "agolden-test",
+          "bgolden-test",
+          "cgolden-test",
+          "dgolden-test",
+          "egolden-test",
+          "fgolden-test",
+          "ggolden-test",
+          "hgolden-test"
         ],
         "warnings": [
           {
             "code": "COE.HOMOGLYPH_RISK",
-            "message": "14 confusable variant(s) detected: 6olden-test, 9olden-test, g0lden-test...",
+            "message": "20 confusable variant(s) detected: 6olden-test, 9olden-test, g0lden-test...",
             "severity": "high"
+          },
+          {
+            "code": "COE.VARIANT.FUZZY_HIGH",
+            "message": "30 fuzzy edit-distance=1 variants generated (showing first 5 in forms)",
+            "severity": "info"
           }
         ]
       }
@@ -182,7 +239,8 @@
     ],
     "limitations": [
       "This engine does not check trademark databases (USPTO, EUIPO, etc.).",
-      "Domain name availability is not checked in this version."
+      "Domain name availability is not checked in this version.",
+      "No market-usage signal search was performed. Use --radar to enable."
     ],
     "recommendedActions": [
       {

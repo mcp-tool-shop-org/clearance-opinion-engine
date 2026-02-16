@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"name\":\"nginx\",\"namespace\":\"library\",\"star_count\":18500,\"pull_count\":4200000000,\"description\":\"Official build of Nginx.\"}"
+}

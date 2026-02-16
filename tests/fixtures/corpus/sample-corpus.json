@@ -1,0 +1,9 @@
+{
+  "marks": [
+    { "mark": "ReactJS", "class": 9, "registrant": "Meta Platforms, Inc." },
+    { "mark": "Angular", "class": 9 },
+    { "mark": "Vue.js" },
+    { "mark": "ClearView", "class": 42, "registrant": "ClearView AI" },
+    { "mark": "FreshLink", "class": 35 }
+  ]
+}

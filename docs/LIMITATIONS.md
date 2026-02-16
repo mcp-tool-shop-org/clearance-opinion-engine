@@ -17,6 +17,10 @@ The engine does NOT query:
 
 These require API keys, registration, or paid access and are planned for a future phase.
 
+The **collision radar** feature (`--radar`) searches GitHub and npm for similar names, but these are **indicative market-usage signals**, not trademark searches. A name being unused on GitHub does not mean it is not trademarked, and a name found on GitHub does not constitute a trademark conflict.
+
+The **corpus comparison** feature (`--corpus`) compares against a user-provided list of known marks only. It is not an exhaustive trademark database.
+
 ## Domain Coverage
 
 - Domain checks use **RDAP** (RFC 9083) via the `rdap.org` bootstrap service
@@ -42,11 +46,29 @@ The engine does not search for:
 - Business name registrations
 - DBA filings
 
+The collision radar (`--radar`) provides partial coverage of this gap by searching GitHub repositories and npm packages, but these are indicative signals only and do not cover commerce at large.
+
+## Docker Hub Requires Namespace
+
+Docker Hub checks require a `--dockerNamespace <ns>` flag specifying the Docker Hub user or organization. Without this flag, the Docker Hub channel is skipped with a `COE.DOCKER.NAMESPACE_REQUIRED` warning. Unlike npm or PyPI where package names are globally unique, Docker Hub repositories exist within a namespace (e.g., `myorg/my-tool`).
+
+## Hugging Face Requires Owner
+
+Hugging Face checks require a `--hfOwner <owner>` flag specifying the Hugging Face user or organization. Without this flag, both model and space checks are skipped with `COE.HF.OWNER_REQUIRED`. Hugging Face resources are scoped to an owner (e.g., `myuser/my-model`).
+
+## Fuzzy Variant Scope
+
+- Fuzzy variants use **edit-distance=1 only** (single character deletion, substitution, or insertion)
+- Edit-distance=2+ variants are not generated (combinatorial explosion)
+- Fuzzy variant registry queries are limited to **npm, PyPI, and crates.io** — not domain, GitHub, Docker Hub, or Hugging Face
+- Default variant budget is 12 (configurable via `--variantBudget`, max 30)
+- Fuzzy variant matches produce YELLOW opinions, never RED by themselves
+
 ## Phonetic Analysis Limitations
 
 - Uses the Metaphone algorithm, which is **English-centric**
 - May not detect phonetic similarities in other languages
-- Homoglyph detection covers common ASCII confusables only
+- Homoglyph detection covers ASCII + Cyrillic + Greek confusables (not all Unicode scripts)
 - Does not detect semantic similarity (different words with same meaning)
 
 ## Point-in-Time Checks

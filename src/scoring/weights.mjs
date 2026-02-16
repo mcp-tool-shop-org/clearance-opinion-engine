@@ -97,6 +97,7 @@ export function computeScoreBreakdown(data, opts = {}) {
     else if (f.kind === "phonetic_conflict") conflictScore -= 20;
     else if (f.kind === "confusable_risk") conflictScore -= 10;
     else if (f.kind === "near_conflict") conflictScore -= 5;
+    else if (f.kind === "variant_taken") conflictScore -= 5;
   }
   conflictScore = Math.max(0, conflictScore);
   const conflictDetails = findings.length === 0

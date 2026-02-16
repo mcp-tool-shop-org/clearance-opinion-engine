@@ -9,6 +9,16 @@ import { join } from "node:path";
 import { renderPacketHtml, renderSummaryJson } from "./packet.mjs";
 
 /**
+ * Escape pipe characters for Markdown table cells.
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeForMd(str) {
+  if (typeof str !== "string") return "";
+  return str.replace(/\|/g, "\\|");
+}
+
+/**
  * Write a run to disk as JSON + Markdown + HTML + Summary.
  *
  * @param {object} run - Complete run object (per schema)
@@ -60,6 +70,59 @@ export function renderRunMd(run) {
   lines.push(`## Opinion: ${tierEmoji} ${tierLabel}`);
   lines.push("");
   lines.push(opinion.summary || "No summary available.");
+  lines.push("");
+
+  // Executive Summary
+  lines.push("## Executive Summary");
+  lines.push("");
+  const availableCount = run.checks?.filter((c) => c.status === "available").length || 0;
+  const takenCount = run.checks?.filter((c) => c.status === "taken").length || 0;
+  const unknownCount = run.checks?.filter((c) => c.status === "unknown").length || 0;
+  const totalChecks = run.checks?.length || 0;
+  const overallScore = opinion.scoreBreakdown?.overallScore;
+  lines.push(`| Metric | Value |`);
+  lines.push(`|--------|-------|`);
+  lines.push(`| Tier | ${tierEmoji} ${tierLabel} |`);
+  if (overallScore !== undefined) {
+    lines.push(`| Overall Score | ${overallScore}/100 |`);
+  }
+  lines.push(`| Namespaces Checked | ${totalChecks} |`);
+  lines.push(`| Available | ${availableCount} |`);
+  lines.push(`| Taken | ${takenCount} |`);
+  lines.push(`| Unknown | ${unknownCount} |`);
+  lines.push(`| Findings | ${run.findings?.length || 0} |`);
+  lines.push("");
+  if (opinion.recommendedActions?.length > 0) {
+    lines.push(`**Top Action:** ${opinion.recommendedActions[0].label}`);
+    lines.push("");
+  }
+  if (opinion.closestConflicts?.length > 0) {
+    const topConflicts = opinion.closestConflicts.slice(0, 2);
+    lines.push("**Top Conflicts:**");
+    for (const cc of topConflicts) {
+      lines.push(`- ${cc.mark} (${cc.severity})`);
+    }
+    lines.push("");
+  }
+
+  // Coverage Matrix
+  lines.push("## Coverage Matrix");
+  lines.push("");
+  lines.push("| Source | Namespace | Status | Authority |");
+  lines.push("|--------|-----------|--------|-----------|");
+  if (run.checks?.length > 0) {
+    for (const c of run.checks) {
+      const source = c.details?.source || c.namespace;
+      const statusIcon =
+        c.status === "available" ? "\u2705" : c.status === "taken" ? "\u274C" : "\u2753";
+      const cacheTag = c.cacheHit ? " (cached)" : "";
+      lines.push(
+        `| ${source} | ${c.namespace} | ${statusIcon} ${c.status}${cacheTag} | ${c.authority} |`
+      );
+    }
+  } else {
+    lines.push("| - | - | - | - |");
+  }
   lines.push("");
 
   // Reasons
@@ -162,6 +225,87 @@ export function renderRunMd(run) {
       }
       lines.push("");
     }
+  }
+
+  // Collision Radar Signals (conditional)
+  const radarChecks = (run.checks || []).filter(
+    (c) => c.namespace === "custom" && (c.details?.source === "github_search" || c.details?.source === "npm_search")
+  );
+  if (radarChecks.length > 0) {
+    lines.push("## Collision Radar Signals");
+    lines.push("");
+    lines.push("*Indicative market-usage signals — not authoritative trademark searches.*");
+    lines.push("");
+    lines.push("| Source | Name | Similarity | Details |");
+    lines.push("|--------|------|-----------|---------|");
+    for (const c of radarChecks) {
+      const sim = c.details?.similarity;
+      const simScore = sim?.overall !== undefined ? `${(sim.overall * 100).toFixed(0)}%` : "-";
+      const source = escapeForMd(c.details?.source || "unknown");
+      const name = escapeForMd(c.query?.value || "");
+      const looksLabel = sim?.looks?.label || "-";
+      const soundsLabel = sim?.sounds?.label || "-";
+      lines.push(`| ${source} | \`${name}\` | ${simScore} | looks: ${looksLabel}, sounds: ${soundsLabel} |`);
+    }
+    lines.push("");
+  }
+
+  // Corpus Comparison (conditional)
+  const corpusEvidence = (run.evidence || []).filter(
+    (e) => e.source?.system === "user_corpus"
+  );
+  const corpusFindings = (run.findings || []).filter(
+    (f) => f.why?.some((w) => w.includes("Commercial impression"))
+  );
+  if (corpusEvidence.length > 0 || corpusFindings.length > 0) {
+    lines.push("## Corpus Comparison");
+    lines.push("");
+    lines.push("*Comparison against user-provided known marks.*");
+    lines.push("");
+    if (corpusFindings.length > 0) {
+      for (const f of corpusFindings) {
+        const severityIcon =
+          f.severity === "high" ? "\u{1F534}" : f.severity === "medium" ? "\u{1F7E1}" : "\u{1F7E2}";
+        lines.push(`- ${severityIcon} **${f.kind}** (${f.severity}): ${f.summary}`);
+      }
+      lines.push("");
+    } else {
+      lines.push("No similar marks found in the provided corpus.");
+      lines.push("");
+    }
+  }
+
+  // Fuzzy Variants Checked (conditional)
+  const fuzzyChecks = (run.checks || []).filter((c) => c.query?.isVariant);
+  if (fuzzyChecks.length > 0) {
+    lines.push("## Fuzzy Variants Checked");
+    lines.push("");
+    lines.push("*Edit-distance=1 variants queried against registries for typosquatting risk.*");
+    lines.push("");
+    lines.push("| Variant | Registry | Status |");
+    lines.push("|---------|----------|--------|");
+    for (const c of fuzzyChecks) {
+      const statusIcon =
+        c.status === "available" ? "\u2705" : c.status === "taken" ? "\u274C" : "\u2753";
+      lines.push(`| \`${c.query?.value || ""}\` | ${c.namespace} | ${statusIcon} ${c.status} |`);
+    }
+    lines.push("");
+  }
+
+  // Fuzzy Variants Generated (Not Checked)
+  const fuzzyAll = run.variants?.items?.[0]?.fuzzyVariants || [];
+  const fuzzyCheckedValues = new Set(fuzzyChecks.map((c) => c.query?.value));
+  const fuzzyUnchecked = fuzzyAll.filter((v) => !fuzzyCheckedValues.has(v));
+  if (fuzzyUnchecked.length > 0) {
+    lines.push("## Fuzzy Variants (Not Checked)");
+    lines.push("");
+    const shown = fuzzyUnchecked.slice(0, 10);
+    const remaining = fuzzyUnchecked.length - shown.length;
+    lines.push(shown.map((v) => `\`${v}\``).join(", "));
+    if (remaining > 0) {
+      lines.push(`+${remaining} more`);
+    }
+    lines.push("");
   }
 
   // Recommended Actions

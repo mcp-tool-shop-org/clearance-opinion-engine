@@ -1,24 +1,41 @@
 /**
  * Homoglyph / confusable character detection for clearance-opinion-engine.
  *
- * Conservative: only common ASCII confusables. No Unicode confusables
- * (those require a full Unicode confusable table and are deferred to v2).
+ * Covers common ASCII confusables plus high-risk Latin/Cyrillic/Greek
+ * homoglyphs that are frequently used in typosquatting attacks.
  */
 
 /**
- * ASCII confusable substitution table.
- * Each entry maps a character to its common confusable(s).
+ * Maximum total homoglyph variants to generate.
+ * Prevents combinatorial explosion with the expanded confusable map.
+ */
+const MAX_HOMOGLYPH_VARIANTS = 50;
+
+/**
+ * Confusable substitution table.
+ * Each entry maps a character to its common confusable(s):
+ *   - ASCII confusables (digits, punctuation)
+ *   - Cyrillic look-alikes (а, с, е, і, к, м, о, р, х, у)
+ *   - Greek look-alikes (ο, τ, υ)
  */
 const CONFUSABLE_MAP = {
-  a: ["4", "@"],
+  a: ["4", "@", "\u0430"],           // Cyrillic а
   b: ["8"],
-  e: ["3"],
+  c: ["\u0441"],                      // Cyrillic с
+  e: ["3", "\u0435"],                 // Cyrillic е
   g: ["9", "6"],
-  i: ["1", "l", "!"],
+  h: ["\u04BB"],                      // Cyrillic һ
+  i: ["1", "l", "!", "\u0456"],       // Cyrillic і
+  k: ["\u043A"],                      // Cyrillic к
   l: ["1", "i", "|"],
-  o: ["0"],
+  m: ["\u043C"],                      // Cyrillic м
+  o: ["0", "\u043E", "\u03BF"],       // Cyrillic о + Greek ο
+  p: ["\u0440"],                      // Cyrillic р
   s: ["5", "$"],
-  t: ["7", "+"],
+  t: ["7", "+", "\u03C4"],            // Greek τ
+  u: ["\u03C5"],                      // Greek υ
+  x: ["\u0445"],                      // Cyrillic х
+  y: ["\u0443"],                      // Cyrillic у
   z: ["2"],
 };
 
@@ -49,7 +66,8 @@ export function homoglyphVariants(name) {
     }
   }
 
-  return [...variants].sort();
+  const sorted = [...variants].sort();
+  return sorted.slice(0, MAX_HOMOGLYPH_VARIANTS);
 }
 
 /**

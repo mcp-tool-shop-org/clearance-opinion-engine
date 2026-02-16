@@ -426,6 +426,10 @@
           "additionalProperties": true,
           "description": "Adapter-specific details (kept small; large blobs belong in evidence)."
         },
+        "cacheHit": {
+          "type": "boolean",
+          "description": "Whether this check was served from cache."
+        },
         "errors": {
           "type": "array",
           "items": {

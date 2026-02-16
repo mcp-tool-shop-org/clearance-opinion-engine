@@ -9,7 +9,7 @@ Operational reference for clearance-opinion-engine. All error codes, troubleshoo
 | Code | Meaning | Fix |
 |------|---------|-----|
 | `COE.INIT.NO_ARGS` | Missing required argument | Check usage: `coe check <name>` |
-| `COE.INIT.BAD_CHANNEL` | Unknown channel name | Valid: `github`, `npm`, `pypi`, `domain` |
+| `COE.INIT.BAD_CHANNEL` | Unknown channel name | Valid: `github`, `npm`, `pypi`, `domain`, `cratesio`, `dockerhub`, `huggingface`. Groups: `core`, `dev`, `ai`, `all` |
 
 ### COE.ADAPTER.* — Adapter / Network Errors
 
@@ -20,6 +20,46 @@ Operational reference for clearance-opinion-engine. All error codes, troubleshoo
 | `COE.ADAPTER.PYPI_FAIL` | PyPI API unreachable | Check network; pypi.org may be down |
 | `COE.ADAPTER.DOMAIN_FAIL` | RDAP lookup failed | Check network; rdap.org may be down |
 | `COE.ADAPTER.DOMAIN_RATE_LIMITED` | RDAP rate limit (HTTP 429) | Wait 10+ seconds; reduce TLD count |
+
+### COE.ADAPTER.* — Ecosystem Adapter Errors
+
+| Code | Meaning | Fix |
+|------|---------|-----|
+| `COE.ADAPTER.CRATESIO_FAIL` | crates.io API unreachable | Check network; crates.io may be down. Ensure User-Agent is set |
+| `COE.ADAPTER.DOCKERHUB_FAIL` | Docker Hub API unreachable | Check network; hub.docker.com may be down |
+| `COE.ADAPTER.HF_FAIL` | Hugging Face API unreachable | Check network; huggingface.co may be down |
+
+### COE.DOCKER.* — Docker Hub Errors
+
+| Code | Meaning | Fix |
+|------|---------|-----|
+| `COE.DOCKER.NAMESPACE_REQUIRED` | Docker Hub channel enabled but `--dockerNamespace` not provided | Add `--dockerNamespace <ns>` flag or remove `dockerhub` from channels |
+
+### COE.HF.* — Hugging Face Errors
+
+| Code | Meaning | Fix |
+|------|---------|-----|
+| `COE.HF.OWNER_REQUIRED` | Hugging Face channel enabled but `--hfOwner` not provided | Add `--hfOwner <owner>` flag or remove `huggingface` from channels |
+
+### COE.VARIANT.* — Variant Errors
+
+| Code | Meaning | Fix |
+|------|---------|-----|
+| `COE.VARIANT.FUZZY_HIGH` | Fuzzy variant count exceeds threshold (informational) | No action needed; this is expected for longer names |
+
+### COE.ADAPTER.RADAR_* — Collision Radar Errors
+
+| Code | Meaning | Fix |
+|------|---------|-----|
+| `COE.ADAPTER.RADAR_GITHUB_FAIL` | GitHub Search API unreachable | Check network; set `GITHUB_TOKEN` for higher rate limits |
+| `COE.ADAPTER.RADAR_NPM_FAIL` | npm Search API unreachable | Check network; registry.npmjs.org may be down |
+
+### COE.CORPUS.* — Corpus Errors
+
+| Code | Meaning | Fix |
+|------|---------|-----|
+| `COE.CORPUS.INVALID` | Corpus file has invalid format | Ensure JSON has `{ marks: [{ mark: "name" }] }` structure |
+| `COE.CORPUS.NOT_FOUND` | Corpus file not found at specified path | Check the `--corpus` file path |
 
 ### COE.RENDER.* — Output Errors
 
@@ -80,6 +120,27 @@ node scripts/gen-lock.mjs reports/2026-02-15
 # Later: verify nothing changed
 coe replay reports/2026-02-15
 ```
+
+### Cache Troubleshooting
+
+The disk cache is opt-in via `--cache-dir`. Common issues:
+
+1. **Stale results**: Cache TTL defaults to 24 hours. Use `--max-age-hours 1` for shorter TTL
+2. **Corrupted entries**: The cache silently ignores corrupted JSON (returns null, refetches)
+3. **Disk full**: Cache writes are atomic (temp file + rename), so partial writes don't corrupt
+4. **Cache location**: Use an absolute path for `--cache-dir` to avoid confusion with working directories
+
+To clear the cache:
+```bash
+rm -rf .coe-cache
+```
+
+### Collision Radar Rate Limits
+
+- **GitHub Search API**: 10 requests/minute unauthenticated, 30/minute with `GITHUB_TOKEN`
+- **npm Search API**: No documented rate limit, but excessive use may trigger 429s
+- Collision radar uses `Promise.allSettled()` — if one source fails, the other still returns results
+- Use `--cache-dir` to avoid repeated API calls during development
 
 ### Output Files
 

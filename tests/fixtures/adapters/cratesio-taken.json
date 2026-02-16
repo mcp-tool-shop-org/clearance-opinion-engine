@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"crate\":{\"name\":\"serde\",\"created_at\":\"2015-01-13T00:07:07.000Z\",\"downloads\":312000000,\"description\":\"A serialization framework\"}}"
+}

@@ -9,6 +9,7 @@ import { normalize, stripAll } from "./normalize.mjs";
 import { tokenize } from "./tokenize.mjs";
 import { phoneticVariants, phoneticSignature } from "./phonetic.mjs";
 import { homoglyphVariants } from "./homoglyphs.mjs";
+import { fuzzyVariants } from "./fuzzy.mjs";
 
 /**
  * Generate all variant forms for a candidate name.
@@ -54,6 +55,12 @@ export function generateVariants(candidateMark, opts = {}) {
     value: normalized,
   });
 
+  // Generate fuzzy edit-distance=1 variants (full list stored separately)
+  const fuzzy = fuzzyVariants(normalized, { maxVariants: 30 });
+  for (const f of fuzzy.slice(0, 5)) {
+    forms.push({ type: "fuzzy", value: f });
+  }
+
   // Deduplicate by value (keep first occurrence of each type)
   const seen = new Set();
   const uniqueForms = [];
@@ -71,7 +78,15 @@ export function generateVariants(candidateMark, opts = {}) {
     warnings.push({
       code: "COE.HOMOGLYPH_RISK",
       message: `${homoglyphs.length} confusable variant(s) detected: ${homoglyphs.slice(0, 3).join(", ")}${homoglyphs.length > 3 ? "..." : ""}`,
-      severity: homoglyphs.length >= 5 ? "high" : "warn",
+      severity: homoglyphs.length >= 8 ? "high" : "warn",
+    });
+  }
+
+  if (fuzzy.length > 20) {
+    warnings.push({
+      code: "COE.VARIANT.FUZZY_HIGH",
+      message: `${fuzzy.length} fuzzy edit-distance=1 variants generated (showing first 5 in forms)`,
+      severity: "info",
     });
   }
 
@@ -79,6 +94,7 @@ export function generateVariants(candidateMark, opts = {}) {
     candidateMark,
     canonical: normalized,
     forms: uniqueForms,
+    fuzzyVariants: fuzzy,
     warnings,
   };
 }
@@ -103,3 +119,4 @@ export { normalize, stripAll } from "./normalize.mjs";
 export { tokenize } from "./tokenize.mjs";
 export { metaphone, phoneticVariants, phoneticSignature } from "./phonetic.mjs";
 export { homoglyphVariants, areConfusable } from "./homoglyphs.mjs";
+export { fuzzyVariants, selectTopN } from "./fuzzy.mjs";
