@@ -339,6 +339,7 @@
         "url": "https://github.com/new"
       }
     ],
+    "collisionCards": [],
     "coverageScore": 100,
     "uncheckedNamespaces": [],
     "disclaimer": "This report checks public namespace availability across github, npm, pypi, domain. It does not check trademark databases, common-law marks, or pending applications. This is not: a trademark search, a legal opinion, a freedom-to-operate analysis, or a guarantee of rights. Coverage: 100% of requested channels. Consult a trademark attorney for authoritative guidance."

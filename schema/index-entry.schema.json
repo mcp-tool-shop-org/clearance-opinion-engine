@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcptoolshop.com/schemas/clearance.opinion.engine/index-entry.schema.v1.json",
+  "title": "Clearance Opinion Engine — Index Entry",
+  "description": "Schema for individual entries in runs.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "slug",
+    "name",
+    "tier",
+    "date"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tier": {
+      "type": "string",
+      "enum": ["green", "yellow", "red", "unknown"]
+    },
+    "score": {
+      "type": ["number", "null"]
+    },
+    "date": {
+      "type": "string"
+    }
+  }
+}

@@ -43,7 +43,8 @@ export function appendRunIndex(indexPath, entry) {
 
   // Deduplicate by slug: replace existing entry if same slug
   runs = runs.filter((r) => r.slug !== entry.slug);
-  runs.push(entry);
+  const stampedEntry = { schemaVersion: "1.0.0", ...entry };
+  runs.push(stampedEntry);
 
   // Sort by date descending
   runs.sort((a, b) => (b.date || "").localeCompare(a.date || ""));

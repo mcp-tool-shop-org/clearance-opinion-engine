@@ -111,6 +111,7 @@ Top factors and risk narratives use template catalogs — deterministic, no LLM 
 | Coverage Score | 0-100% measure of how many requested namespaces were successfully checked |
 | Unchecked Namespaces | List of namespaces that returned unknown status |
 | Disclaimer | Legal-clarity footer stating what the report is and is not |
+| Collision cards | Deterministic explanation cards for each conflict type | `collisionCards[]` in opinion |
 
 Next actions are distinct from `recommendedActions` (which are reservation links). They provide coaching prose: "Claim now", "Re-run with --radar", "Consult a trademark attorney", etc.
 
@@ -136,6 +137,19 @@ A self-contained HTML report suitable for sharing with counsel. Includes the ful
 ### Summary JSON (`summary.json`)
 
 A condensed output for integrations: tier, overall score, namespace statuses, findings summary, collision radar count, corpus match count, fuzzy variants taken count, and recommended actions.
+
+---
+
+## 1.0 Criteria
+
+Before the engine reaches v1.0.0, the following must be true:
+
+- [x] Artifact schemas published and validated in CI (`summary.schema.json`, `index-entry.schema.json`)
+- [ ] Adapter reliability documented (uptime, rate limits, fallback behavior for each channel)
+- [x] Compatibility policy stated and enforced (`docs/VERSIONING.md`)
+- [ ] Website consumption proven stable (at least one production consumer of `summary.json`)
+- [x] Golden snapshot tests cover all tier outcomes (GREEN, YELLOW, RED)
+- [ ] Collision cards validated against real-world runs
 
 ---
 
@@ -255,7 +269,16 @@ node src/index.mjs publish reports/2026-02-15 --out dist/clearance/run1
 
 # Publish and update a shared runs index
 node src/index.mjs publish reports/2026-02-15 --out dist/clearance/run1 --index dist/clearance/runs.json
+
+# ── Validate artifacts ────────────────────────────────────
+
+# Validate JSON artifacts against built-in schemas
+node src/index.mjs validate-artifacts reports/2026-02-16
 ```
+
+### `coe validate-artifacts <dir>`
+
+Validate JSON artifacts (`run.json`, `summary.json`, `runs.json`) against built-in schemas. Prints a pass/fail indicator per file. Exits 0 if all valid, 1 otherwise.
 
 ### Batch mode
 
@@ -390,6 +413,7 @@ All tests use fixture-injected adapters (zero network calls). Golden snapshots e
 | `COE.FS.PERMISSION` | Permission denied writing to disk |
 | `COE.CORPUS.EXISTS` | Corpus file already exists (during init) |
 | `COE.CORPUS.EMPTY_NAME` | Mark name is required but empty |
+| `COE.VALIDATE.*` | Artifact validation errors |
 
 See [docs/RUNBOOK.md](docs/RUNBOOK.md) for the complete error reference and troubleshooting guide.
 

@@ -183,3 +183,12 @@ The function `scanForSecrets(content)` in `src/lib/redact.mjs`. Scans a string f
 
 ## resolveCacheDir
 The function `resolveCacheDir(flagValue)` in `src/lib/config.mjs`. Returns the cache directory from: (1) CLI `--cache-dir` flag, (2) `COE_CACHE_DIR` environment variable, or (3) `null`. Centralizes cache directory resolution.
+
+## collisionCard
+A user-facing explanation card for a specific collision type. Built deterministically from findings. Each card has `kind`, `title`, `whyItMatters`, `evidence`, and `severity`. Kinds: `variant_taken`, `looks_like`, `sounds_like`, `confusable_chars`, `market_signal`. See `src/scoring/collision-cards.mjs`.
+
+## formatVersion
+A version field on `summary.json` that tracks the output format independently of the run schema. Currently `"1.0.0"`. Distinguished from `schemaVersion` which tracks the run schema.
+
+## validate-artifacts
+The `coe validate-artifacts <dir>` command. Scans a directory for `run.json`, `summary.json`, and `runs.json`, validates each against built-in type rules. Exits 0 if all valid, 1 otherwise. See `src/validate.mjs`.

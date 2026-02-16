@@ -180,6 +180,25 @@ rm -rf .coe-cache
 - Collision radar uses `Promise.allSettled()` — if one source fails, the other still returns results
 - Use `--cache-dir` to avoid repeated API calls during development
 
+### Validating Artifacts
+
+```bash
+coe validate-artifacts reports/2026-02-16/
+```
+
+Checks `run.json`, `summary.json`, and `runs.json` against built-in schemas. Use after `publish` to verify output integrity.
+
+### Collision Cards
+
+When the opinion contains conflicts, collision explanation cards appear in the output:
+- `variant_taken` — a fuzzy variant of the name is already registered
+- `looks_like` — a visually similar name exists in a namespace
+- `sounds_like` — a phonetically similar name exists
+- `confusable_chars` — homoglyph/confusable character overlap detected
+- `market_signal` — indicative market-usage signal found via collision radar
+
+Cards appear in `summary.json`, Markdown reports, and the HTML attorney packet. Capped at 6 per run.
+
 ### Doctor Command
 
 Use `coe doctor` to diagnose environment issues:

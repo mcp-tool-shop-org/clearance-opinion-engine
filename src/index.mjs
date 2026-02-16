@@ -29,8 +29,9 @@ import { refreshRun } from "./refresh.mjs";
 import { corpusInit, corpusAdd } from "./corpus/cli.mjs";
 import { publishRun } from "./publish.mjs";
 import { runDoctor } from "./doctor.mjs";
+import { validateDirectory } from "./validate.mjs";
 
-const VERSION = "0.8.0";
+const VERSION = "0.9.0";
 
 // ── Channel system ──────────────────────────────────────────────
 const CORE_CHANNELS = ["github", "npm", "pypi", "domain"];
@@ -104,6 +105,7 @@ Usage:
   coe report <file>                Re-render an existing run.json as Markdown
   coe replay <dir>                 Verify manifest and regenerate outputs from run.json
   coe doctor                       Run environment diagnostics
+  coe validate-artifacts <dir>     Validate JSON artifacts against schemas
 
 Check options:
   --channels <list>     Channels to check (default: github,npm,pypi,domain)
@@ -608,8 +610,40 @@ if (command === "replay") {
       fail("COE.DOCTOR.FATAL", err.message, { nerd: err.stack });
     }
   });
+} else if (command === "validate-artifacts") {
+  const targetDir = args[1];
+  if (!targetDir) {
+    fail("COE.INIT.NO_ARGS", "No directory specified", {
+      fix: "Usage: coe validate-artifacts <directory>",
+    });
+  }
+
+  const { results, allValid } = validateDirectory(resolve(targetDir));
+
+  if (results.length === 0) {
+    console.log("No JSON artifacts found in directory.");
+    process.exit(1);
+  }
+
+  for (const r of results) {
+    if (r.valid) {
+      console.log(`  \u2713 ${r.file} (${r.type})`);
+    } else {
+      console.log(`  \u2717 ${r.file} (${r.type})`);
+      for (const err of r.errors) {
+        console.log(`    ${err.path}: ${err.message}`);
+      }
+    }
+  }
+
+  if (allValid) {
+    console.log("\nAll artifacts valid.");
+  } else {
+    console.log("\nValidation failed.");
+    process.exit(1);
+  }
 } else {
   fail("COE.INIT.NO_ARGS", `Unknown command: ${command}`, {
-    fix: "Use 'check', 'batch', 'refresh', 'corpus', 'publish', 'report', 'replay', or 'doctor'. Run with --help for usage.",
+    fix: "Use 'check', 'batch', 'refresh', 'corpus', 'publish', 'report', 'replay', 'doctor', or 'validate-artifacts'. Run with --help for usage.",
   });
 }

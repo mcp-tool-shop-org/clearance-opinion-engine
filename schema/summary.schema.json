@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcptoolshop.com/schemas/clearance.opinion.engine/summary.schema.v1.json",
+  "title": "Clearance Opinion Engine — Summary",
+  "description": "Schema for summary.json produced by renderSummaryJson().",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "formatVersion",
+    "generatedAt",
+    "engineVersion",
+    "runId",
+    "candidates",
+    "tier",
+    "namespaces",
+    "findingsSummary"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "formatVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "engineVersion": {
+      "type": "string"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tier": {
+      "type": "string",
+      "enum": ["green", "yellow", "red", "unknown"]
+    },
+    "overallScore": {
+      "type": ["number", "null"]
+    },
+    "scoreBreakdown": {
+      "type": ["object", "null"]
+    },
+    "topFactors": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "riskNarrative": {
+      "type": ["string", "null"]
+    },
+    "namespaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "namespace": { "type": "string" },
+          "query": { "type": "string" },
+          "status": { "type": "string" },
+          "authority": { "type": "string" }
+        },
+        "required": ["namespace", "query", "status", "authority"]
+      }
+    },
+    "findingsSummary": {
+      "type": "object",
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "byKind": { "type": "object" }
+      },
+      "required": ["total", "byKind"]
+    },
+    "collisionRadarCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "corpusMatchCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fuzzyVariantsTaken": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "recommendedActions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "nextActions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "collisionCards": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "default": []
+    },
+    "coverageScore": {
+      "type": ["number", "null"]
+    },
+    "disclaimer": {
+      "type": ["string", "null"]
+    },
+    "inputsSha256": {
+      "type": "string"
+    }
+  }
+}

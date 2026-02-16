@@ -206,6 +206,27 @@ describe("publishRun", () => {
     } finally { cleanup(); }
   });
 
+  it("index entries include schemaVersion", () => {
+    setup();
+    try {
+      const indexPath = join(TMP_DIR, "idx-schema-version", "runs.json");
+      mkdirSync(join(TMP_DIR, "idx-schema-version"), { recursive: true });
+
+      appendRunIndex(indexPath, {
+        slug: "sv-test",
+        name: "sv-test",
+        tier: "green",
+        score: 85,
+        date: "2026-01-01T00:00:00Z",
+      });
+
+      const runs = JSON.parse(readFileSync(indexPath, "utf8"));
+      assert.equal(runs[0].schemaVersion, "1.0.0", "Index entry should have schemaVersion 1.0.0");
+    } finally {
+      cleanup();
+    }
+  });
+
   it("publishRun with indexPath populates runs.json", () => {
     setup();
     try {

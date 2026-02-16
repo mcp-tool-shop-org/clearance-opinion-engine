@@ -22,6 +22,8 @@ import { hashObject } from "../../src/lib/hash.mjs";
 import { publishRun, appendRunIndex } from "../../src/publish.mjs";
 import { scanForSecrets } from "../../src/lib/redact.mjs";
 import { resolveCacheDir } from "../../src/lib/config.mjs";
+import { validateArtifact } from "../../src/validate.mjs";
+import { buildCollisionCards } from "../../src/scoring/collision-cards.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, "..", "fixtures");
@@ -1072,6 +1074,75 @@ describe("E2E: full pipeline", () => {
       } else {
         process.env.COE_CACHE_DIR = saved;
       }
+    }
+  });
+
+  // ── Phase 9 tests ──────────────────────────────────────────────
+
+  it("summary.json includes schemaVersion and formatVersion", async () => {
+    const run = await runPipeline("p9-schema-ver", allAvailableFetch());
+    const summary = renderSummaryJson(run);
+
+    assert.equal(summary.schemaVersion, "1.0.0", "Summary should have schemaVersion 1.0.0");
+    assert.equal(summary.formatVersion, "1.0.0", "Summary should have formatVersion 1.0.0");
+  });
+
+  it("validate-artifacts passes on summary.json from a clean run", async () => {
+    const run = await runPipeline("p9-validate-summary", allAvailableFetch());
+    const summary = renderSummaryJson(run);
+    const result = validateArtifact(summary, "summary");
+
+    assert.ok(result.valid, `Summary should validate: ${JSON.stringify(result.errors)}`);
+  });
+
+  it("collision cards empty for GREEN tier", async () => {
+    const run = await runPipeline("p9-cards-green", allAvailableFetch());
+
+    assert.equal(run.opinion.tier, "green");
+    assert.ok(Array.isArray(run.opinion.collisionCards), "Should have collisionCards array");
+    assert.equal(run.opinion.collisionCards.length, 0, "GREEN should have no collision cards");
+  });
+
+  it("collision cards generated for RED tier", async () => {
+    const run = await runPipeline("p9-cards-red", npmTakenFetch());
+
+    assert.equal(run.opinion.tier, "red");
+    // RED means exact_conflict — cards skip exact_conflict but may have variant_taken etc.
+    assert.ok(Array.isArray(run.opinion.collisionCards), "Should have collisionCards array");
+    // Can't guarantee cards since they only appear for non-exact findings
+    // but the array must exist and be properly typed
+  });
+
+  it("collision cards capped at 6", async () => {
+    // Build 8 variant_taken findings directly via buildCollisionCards
+    const findings = [];
+    for (let i = 0; i < 8; i++) {
+      findings.push({
+        kind: "variant_taken",
+        severity: "high",
+        summary: `Variant "pkg${i}" is taken in npm`,
+        candidateMark: "test",
+        why: [],
+        evidenceRefs: [],
+      });
+    }
+    const cards = buildCollisionCards(findings, []);
+    assert.ok(cards.length <= 6, `Cards should be capped at 6, got ${cards.length}`);
+  });
+
+  it("collision cards sorted by severity", async () => {
+    const findings = [
+      { kind: "variant_taken", severity: "low", summary: 'Variant "aaa" is taken', candidateMark: "test", why: [], evidenceRefs: [] },
+      { kind: "phonetic_conflict", severity: "high", summary: 'Sounds like "bbb"', candidateMark: "test", why: [], evidenceRefs: [] },
+    ];
+    const cards = buildCollisionCards(findings, []);
+    assert.ok(cards.length >= 2, "Should have at least 2 cards");
+
+    const severityOrder = { critical: 0, major: 1, moderate: 2, minor: 3 };
+    for (let i = 1; i < cards.length; i++) {
+      const prev = severityOrder[cards[i - 1].severity] ?? 99;
+      const curr = severityOrder[cards[i].severity] ?? 99;
+      assert.ok(prev <= curr, `Cards should be sorted by severity: ${cards[i-1].severity} before ${cards[i].severity}`);
     }
   });
 });

@@ -731,6 +731,14 @@
           "type": "string",
           "maxLength": 2000,
           "description": "Legal disclaimer about what this report is and is not."
+        },
+        "collisionCards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/collisionCard"
+          },
+          "default": [],
+          "description": "User-facing collision explanation cards built from findings."
         }
       }
     },
@@ -1088,6 +1096,75 @@
           "type": "integer",
           "minimum": 0,
           "description": "Number of times adaptive backoff delayed a request."
+        }
+      }
+    },
+    "collisionCard": {
+      "type": "object",
+      "required": [
+        "kind",
+        "title",
+        "whyItMatters",
+        "evidence",
+        "severity"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "variant_taken",
+            "looks_like",
+            "sounds_like",
+            "confusable_chars",
+            "market_signal"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 200
+        },
+        "whyItMatters": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 400
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/collisionEvidence"
+          }
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "major",
+            "moderate",
+            "minor"
+          ]
+        }
+      }
+    },
+    "collisionEvidence": {
+      "type": "object",
+      "required": [
+        "namespace",
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "namespace": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 500
         }
       }
     },

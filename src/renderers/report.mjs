@@ -293,6 +293,27 @@ export function renderRunMd(run) {
     }
   }
 
+  // Collision Details (cards)
+  const collisionCards = run.opinion?.collisionCards || [];
+  if (collisionCards.length > 0) {
+    lines.push("## Collision Details");
+    lines.push("");
+    for (const card of collisionCards) {
+      const severityTag = card.severity.toUpperCase();
+      lines.push(`### ${severityTag}: ${card.title}`);
+      lines.push("");
+      lines.push(`**Why it matters:** ${card.whyItMatters}`);
+      lines.push("");
+      if (card.evidence?.length > 0) {
+        for (const ev of card.evidence) {
+          const urlPart = ev.url ? ` — ${ev.url}` : "";
+          lines.push(`- ${ev.namespace}: \`${ev.name}\`${urlPart}`);
+        }
+        lines.push("");
+      }
+    }
+  }
+
   // Collision Radar Signals (conditional)
   const radarChecks = (run.checks || []).filter(
     (c) => c.namespace === "custom" && (c.details?.source === "github_search" || c.details?.source === "npm_search")

@@ -12,6 +12,7 @@
  */
 
 import { computeScoreBreakdown } from "./weights.mjs";
+import { buildCollisionCards } from "./collision-cards.mjs";
 
 // ── Top Factors template catalog ─────────────────────────────────
 const FACTOR_TEMPLATES = {
@@ -729,6 +730,9 @@ export function scoreOpinion(data, opts = {}) {
   // Build next actions (coaching-oriented, with URLs from reservation links)
   const nextActions = buildNextActions(data, { tier, candidateName, claimLinks, domainLinks });
 
+  // Build collision explanation cards
+  const collisionCards = buildCollisionCards(findings, checks);
+
   // Compute coverage score + disclaimer
   const intakeChannels = data.intake?.channels
     ? checks.map((c) => c.namespace).filter((v, i, a) => a.indexOf(v) === i && !checks.find((cc) => cc.namespace === v && cc.query?.isVariant))
@@ -750,6 +754,7 @@ export function scoreOpinion(data, opts = {}) {
     topFactors,
     riskNarrative,
     nextActions,
+    collisionCards,
     coverageScore: coverage.coverageScore,
     uncheckedNamespaces: coverage.uncheckedNamespaces,
     disclaimer: coverage.disclaimer,

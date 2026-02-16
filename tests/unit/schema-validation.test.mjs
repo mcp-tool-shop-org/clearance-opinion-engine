@@ -79,4 +79,36 @@ describe("clearance.schema.json", () => {
     const kindEnum = schema.$defs.finding.properties.kind.enum;
     assert.ok(kindEnum.includes("variant_taken"), "finding.kind enum must include variant_taken");
   });
+
+  it("has $defs.collisionCard with required properties", () => {
+    const raw = readFileSync(schemaPath, "utf8");
+    const schema = JSON.parse(raw);
+    const collisionCard = schema.$defs.collisionCard;
+    assert.ok(collisionCard, "collisionCard must exist in $defs");
+    assert.ok(collisionCard.required.includes("kind"), "collisionCard requires kind");
+    assert.ok(collisionCard.required.includes("title"), "collisionCard requires title");
+    assert.ok(collisionCard.required.includes("whyItMatters"), "collisionCard requires whyItMatters");
+    assert.ok(collisionCard.required.includes("evidence"), "collisionCard requires evidence");
+    assert.ok(collisionCard.required.includes("severity"), "collisionCard requires severity");
+  });
+
+  it("summary.schema.json loads and has required fields", () => {
+    const summarySchemaPath = join(__dirname, "..", "..", "schema", "summary.schema.json");
+    const raw = readFileSync(summarySchemaPath, "utf8");
+    const schema = JSON.parse(raw);
+    assert.ok(schema.$schema, "summary schema should have $schema");
+    assert.ok(schema.required.includes("schemaVersion"), "should require schemaVersion");
+    assert.ok(schema.required.includes("formatVersion"), "should require formatVersion");
+    assert.ok(schema.required.includes("tier"), "should require tier");
+  });
+
+  it("index-entry.schema.json loads and has required fields", () => {
+    const indexSchemaPath = join(__dirname, "..", "..", "schema", "index-entry.schema.json");
+    const raw = readFileSync(indexSchemaPath, "utf8");
+    const schema = JSON.parse(raw);
+    assert.ok(schema.$schema, "index-entry schema should have $schema");
+    assert.ok(schema.required.includes("schemaVersion"), "should require schemaVersion");
+    assert.ok(schema.required.includes("slug"), "should require slug");
+    assert.ok(schema.required.includes("tier"), "should require tier");
+  });
 });

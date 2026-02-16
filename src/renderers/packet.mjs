@@ -341,6 +341,34 @@ export function renderPacketHtml(run) {
     lines.push("</section>");
   }
 
+  // Collision Details (cards)
+  {
+    const collisionCards = run.opinion?.collisionCards || [];
+    if (collisionCards.length > 0) {
+      lines.push('<section class="collision-details">');
+      lines.push("<h2>Collision Details</h2>");
+      for (const card of collisionCards) {
+        const sevClass = card.severity === "critical" ? "high" : card.severity === "major" ? "medium" : "low";
+        lines.push('<div class="finding-card">');
+        lines.push(`<div><span class="severity ${escapeAttr(sevClass)}">${escapeHtml(card.severity.toUpperCase())}</span> &mdash; <strong>${escapeHtml(card.kind)}</strong></div>`);
+        lines.push(`<div><strong>${escapeHtml(card.title)}</strong></div>`);
+        lines.push(`<div><em>${escapeHtml(card.whyItMatters)}</em></div>`);
+        if (card.evidence?.length > 0) {
+          lines.push("<ul>");
+          for (const ev of card.evidence) {
+            const urlLink = ev.url
+              ? ` &mdash; <a href="${escapeAttr(ev.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(ev.url)}</a>`
+              : "";
+            lines.push(`<li>${escapeHtml(ev.namespace)}: <code>${escapeHtml(ev.name)}</code>${urlLink}</li>`);
+          }
+          lines.push("</ul>");
+        }
+        lines.push("</div>");
+      }
+      lines.push("</section>");
+    }
+  }
+
   // Collision Radar Signals (conditional)
   {
     const radarChecks = (run.checks || []).filter(
@@ -585,6 +613,8 @@ export function renderSummaryJson(run) {
   ).length;
 
   return {
+    schemaVersion: "1.0.0",
+    formatVersion: "1.0.0",
     generatedAt: run.run?.createdAt || new Date().toISOString(),
     engineVersion: run.run?.engineVersion || "unknown",
     runId: run.run?.runId || "unknown",
@@ -601,6 +631,7 @@ export function renderSummaryJson(run) {
     fuzzyVariantsTaken,
     recommendedActions: opinion.recommendedActions || [],
     nextActions: opinion.nextActions || [],
+    collisionCards: opinion.collisionCards || [],
     coverageScore: opinion.coverageScore ?? null,
     disclaimer: opinion.disclaimer || null,
     inputsSha256: run.run?.inputsSha256 || "unknown",
