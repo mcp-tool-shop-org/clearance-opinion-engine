@@ -44,10 +44,12 @@ function sanitizeDirName(name) {
  *
  * @param {{ results: object[], errors: object[], stats: object }} batchResult
  * @param {string} outputDir
+ * @param {object} [opts] - Writer options
+ * @param {string} [opts.resumedFrom] - Path of the previous batch directory if resumed
  * @returns {{ files: string[] }}
  */
-export function writeBatchOutput(batchResult, outputDir) {
-  const { results, errors, stats } = batchResult;
+export function writeBatchOutput(batchResult, outputDir, opts = {}) {
+  const { results, errors, stats, costStats } = batchResult;
 
   mkdirSync(outputDir, { recursive: true });
 
@@ -70,7 +72,7 @@ export function writeBatchOutput(batchResult, outputDir) {
 
   // index.html (dashboard)
   const indexHtmlPath = join(batchDir, "index.html");
-  writeFileSync(indexHtmlPath, renderBatchDashboardHtml(results, stats), "utf8");
+  writeFileSync(indexHtmlPath, renderBatchDashboardHtml(results, { ...stats, costStats }), "utf8");
   files.push("batch/index.html");
 
   // 2. Write per-name run outputs

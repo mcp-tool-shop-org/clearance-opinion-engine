@@ -1,6 +1,6 @@
 {
-  "name": "clearance-opinion-engine",
-  "version": "0.5.0",
+  "name": "@mcptoolshop/clearance-opinion-engine",
+  "version": "0.7.0",
   "description": "Deterministic name-availability and clearance-opinion engine",
   "type": "module",
   "main": "src/index.mjs",
@@ -43,5 +43,11 @@
     "batch-mode",
     "freshness",
     "refresh"
+  ],
+  "files": [
+    "src/",
+    "schema/",
+    "README.md",
+    "LICENSE"
   ]
 }

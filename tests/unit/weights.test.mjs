@@ -5,6 +5,7 @@ import {
   TIER_THRESHOLDS,
   getWeightProfile,
   computeScoreBreakdown,
+  computeDupontFactors,
 } from "../../src/scoring/weights.mjs";
 
 describe("WEIGHT_PROFILES", () => {
@@ -190,5 +191,72 @@ describe("computeScoreBreakdown", () => {
     );
 
     assert.equal(result.conflictSeverity.score, 0);
+  });
+});
+
+// ── Phase 6: computeDupontFactors ────────────────────────────
+
+describe("computeDupontFactors", () => {
+  it("exists and is a function", () => {
+    assert.equal(typeof computeDupontFactors, "function");
+  });
+
+  it("returns object with similarityOfMarks, channelOverlap, fameProxy, intentProxy", () => {
+    const result = computeDupontFactors({ checks: [], findings: [] });
+    assert.ok(result.similarityOfMarks);
+    assert.ok(result.channelOverlap);
+    assert.ok(result.fameProxy);
+    assert.ok(result.intentProxy);
+  });
+
+  it("each factor has score (number) and rationale (string)", () => {
+    const result = computeDupontFactors({ checks: [], findings: [] });
+    for (const key of ["similarityOfMarks", "channelOverlap", "fameProxy", "intentProxy"]) {
+      assert.ok(typeof result[key].score === "number", `${key}.score must be a number`);
+      assert.ok(typeof result[key].rationale === "string", `${key}.rationale must be a string`);
+    }
+  });
+
+  it("default scores are 0 when no radar/corpus data present", () => {
+    const result = computeDupontFactors({ checks: [], findings: [] });
+    assert.equal(result.similarityOfMarks.score, 0);
+    assert.equal(result.fameProxy.score, 0);
+    assert.equal(result.intentProxy.score, 0);
+  });
+
+  it("channelOverlap calculates based on conflict ratio", () => {
+    const checks = [
+      { namespace: "npm", status: "taken", query: { value: "test" } },
+      { namespace: "pypi", status: "available", query: { value: "test" } },
+    ];
+    const intake = { channels: ["open-source", "saas"] };
+    const result = computeDupontFactors({ checks, findings: [], intake });
+    // 1 taken out of 2 channels = 50
+    assert.equal(result.channelOverlap.score, 50);
+  });
+
+  it("fameProxy fires when >3 high-similarity radar hits", () => {
+    const checks = Array.from({ length: 4 }, (_, i) => ({
+      namespace: "custom",
+      status: "taken",
+      query: { value: `similar-${i}` },
+      details: {
+        source: "github_search",
+        similarity: { overall: 0.90, looks: { label: "high" }, sounds: { label: "high" } },
+      },
+    }));
+    const result = computeDupontFactors({ checks, findings: [] });
+    assert.ok(result.fameProxy.score > 0, "fameProxy score should be > 0 with high-similarity hits");
+    assert.equal(result.fameProxy.score, 100); // 4 * 25 = 100
+  });
+
+  it("intentProxy fires when variant_taken findings exist", () => {
+    const findings = [
+      { kind: "variant_taken", summary: "variant taken" },
+      { kind: "variant_taken", summary: "another variant taken" },
+    ];
+    const result = computeDupontFactors({ checks: [], findings });
+    assert.ok(result.intentProxy.score > 0, "intentProxy score should be > 0 with variant_taken findings");
+    assert.equal(result.intentProxy.score, 60); // 2 * 30 = 60
   });
 });

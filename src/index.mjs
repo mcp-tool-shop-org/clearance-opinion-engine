@@ -27,8 +27,9 @@ import { writeBatchOutput } from "./batch/writer.mjs";
 import { refreshRun } from "./refresh.mjs";
 import { corpusInit, corpusAdd } from "./corpus/cli.mjs";
 import { publishRun } from "./publish.mjs";
+import { runDoctor } from "./doctor.mjs";
 
-const VERSION = "0.5.0";
+const VERSION = "0.7.0";
 
 // ── Channel system ──────────────────────────────────────────────
 const CORE_CHANNELS = ["github", "npm", "pypi", "domain"];
@@ -101,6 +102,7 @@ Usage:
   coe publish <dir> --out <dir>    Copy run artifacts for website consumption
   coe report <file>                Re-render an existing run.json as Markdown
   coe replay <dir>                 Verify manifest and regenerate outputs from run.json
+  coe doctor                       Run environment diagnostics
 
 Check options:
   --channels <list>     Channels to check (default: github,npm,pypi,domain)
@@ -111,7 +113,8 @@ Check options:
   --hfOwner <owner>     Hugging Face owner (required for huggingface channel)
   --output <dir>        Output directory (default: reports/)
   --risk <level>        Risk tolerance: conservative|balanced|aggressive (default: conservative)
-  --radar               Enable collision radar (GitHub + npm search for similar names)
+  --radar               Enable collision radar (GitHub + npm + crates.io + Docker Hub search)
+  --suggest             Generate safer alternative name suggestions
   --corpus <path>       Path to a JSON corpus of known marks to compare against
   --cache-dir <path>    Directory for caching adapter responses (opt-in)
   --max-age-hours <n>   Cache TTL in hours (default: 24, requires --cache-dir)
@@ -120,6 +123,7 @@ Check options:
 
 Batch options:
   --concurrency <n>     Max simultaneous checks (default: 4)
+  --resume <dir>        Resume from a previous batch output directory
 
 Refresh options:
   --max-age-hours <n>   Max acceptable evidence age in hours (default: 24)
@@ -275,6 +279,7 @@ if (command === "replay") {
   const fuzzyQueryMode = getFlag("--fuzzyQueryMode") || "registries";
   const variantBudget = Math.min(parseInt(getFlag("--variantBudget") || "12", 10), 30);
   const concurrency = parseInt(getFlag("--concurrency") || "4", 10);
+  const resumeDir = getFlag("--resume");
 
   async function batchMain() {
     // Parse input file
@@ -308,10 +313,13 @@ if (command === "replay") {
       cacheDir: cacheDir ? resolve(cacheDir) : null,
       maxAgeHours,
       now,
+      resumeDir: resumeDir ? resolve(resumeDir) : null,
     });
 
     // Write output
-    const { files } = writeBatchOutput(batchResult, batchOutputDir);
+    const { files } = writeBatchOutput(batchResult, batchOutputDir, {
+      resumedFrom: resumeDir ? resolve(resumeDir) : null,
+    });
 
     // Print summary
     const { stats, results, errors } = batchResult;
@@ -319,6 +327,9 @@ if (command === "replay") {
     console.log(`  Total:     ${stats.total}`);
     console.log(`  Succeeded: ${stats.succeeded}`);
     console.log(`  Failed:    ${stats.failed}`);
+    if (stats.resumed) {
+      console.log(`  Skipped:   ${stats.skipped} (resumed)`);
+    }
 
     for (const r of results) {
       const tier = r.run?.opinion?.tier || "unknown";
@@ -484,6 +495,7 @@ if (command === "replay") {
   const outputDir = getFlag("--output") || "reports";
   const riskTolerance = getFlag("--risk") || "conservative";
   const useRadar = args.includes("--radar");
+  const useSuggest = args.includes("--suggest");
   const corpusPath = getFlag("--corpus");
   const cacheDir = getFlag("--cache-dir");
   const maxAgeHours = parseInt(getFlag("--max-age-hours") || "24", 10);
@@ -505,6 +517,7 @@ if (command === "replay") {
       hfOwner,
       riskTolerance,
       useRadar,
+      suggest: useSuggest,
       corpusPath,
       fuzzyQueryMode,
       variantBudget,
@@ -537,8 +550,31 @@ if (command === "replay") {
   main().catch((err) => {
     fail("COE.MAIN.FATAL", err.message, { nerd: err.stack });
   });
+// ── Command: doctor ──────────────────────────────────────────────
+} else if (command === "doctor") {
+  async function doctorMain() {
+    const results = await runDoctor({ engineVersion: VERSION });
+
+    const icons = { pass: "\u2705", warn: "\u26A0\uFE0F", fail: "\u274C" };
+    console.log(`clearance.opinion.engine doctor v${VERSION}\n`);
+    for (const r of results) {
+      console.log(`  ${icons[r.status] || "?"} ${r.check}: ${r.detail}`);
+    }
+
+    const hasFail = results.some((r) => r.status === "fail");
+    if (hasFail) {
+      console.log("\nSome checks failed. Fix the issues above before running coe.");
+      process.exit(1);
+    } else {
+      console.log("\nAll checks passed.");
+    }
+  }
+
+  doctorMain().catch((err) => {
+    fail("COE.DOCTOR.FATAL", err.message, { nerd: err.stack });
+  });
 } else {
   fail("COE.INIT.NO_ARGS", `Unknown command: ${command}`, {
-    fix: "Use 'check', 'batch', 'refresh', 'corpus', 'publish', 'report', or 'replay'. Run with --help for usage.",
+    fix: "Use 'check', 'batch', 'refresh', 'corpus', 'publish', 'report', 'replay', or 'doctor'. Run with --help for usage.",
   });
 }

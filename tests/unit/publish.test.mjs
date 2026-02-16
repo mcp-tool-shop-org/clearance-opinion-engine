@@ -115,4 +115,23 @@ describe("publishRun", () => {
       );
     } finally { cleanup(); }
   });
+
+  it("generates clearance-index.json when summary.json exists", () => {
+    setup();
+    try {
+      const runDir = join(TMP_DIR, "source");
+      const outDir = join(TMP_DIR, "out", "my-run");
+      createFakeRun(runDir);
+
+      const result = publishRun(runDir, outDir);
+      assert.ok(result.published.includes("clearance-index.json"));
+      assert.ok(existsSync(join(outDir, "clearance-index.json")));
+
+      const idx = JSON.parse(readFileSync(join(outDir, "clearance-index.json"), "utf8"));
+      assert.equal(idx.schemaVersion, "1.0.0");
+      assert.equal(idx.tier, "green");
+      assert.equal(idx.slug, "my-run");
+      assert.ok(idx.reportUrl.includes("report.html"));
+    } finally { cleanup(); }
+  });
 });

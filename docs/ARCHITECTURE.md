@@ -3,7 +3,8 @@
 ## Module dependency graph
 
 ```
-src/index.mjs (CLI entry — check, batch, refresh, corpus, publish, report, replay)
+src/index.mjs (CLI entry — check, batch, refresh, corpus, publish, report, replay, doctor)
+├── src/doctor.mjs              (runDoctor — environment diagnostics)
 ├── src/pipeline.mjs           (runCheck, withCache — extracted check pipeline)
 ├── src/lib/errors.mjs         (fail, warn, makeError)
 ├── src/lib/hash.mjs           (hashString, hashObject, hashFile)
@@ -11,6 +12,8 @@ src/index.mjs (CLI entry — check, batch, refresh, corpus, publish, report, rep
 ├── src/lib/cache.mjs          (createCache — time-windowed disk cache)
 ├── src/lib/concurrency.mjs    (createPool, createRateLimiter — batch primitives)
 ├── src/lib/freshness.mjs      (checkFreshness, findStaleAdapters — staleness detection)
+├── src/lib/redact.mjs          (redactUrl, redactEvidence, redactAllEvidence — evidence sanitization)
+├── src/lib/adaptive-backoff.mjs (createAdaptiveBackoff — per-host adaptive fetch throttling)
 ├── src/adapters/
 │   ├── github.mjs             (createGitHubAdapter)
 │   ├── npm.mjs                (createNpmAdapter)
@@ -39,7 +42,8 @@ src/index.mjs (CLI entry — check, batch, refresh, corpus, publish, report, rep
 ├── src/scoring/
 │   ├── opinion.mjs            (scoreOpinion, classifyFindings)
 │   ├── weights.mjs            (computeScoreBreakdown, WEIGHT_PROFILES)
-│   └── similarity.mjs         (jaroWinkler, comparePair, findSimilarMarks)
+│   ├── similarity.mjs         (jaroWinkler, comparePair, findSimilarMarks)
+│   └── alternatives.mjs       (generateAlternatives, recheckAlternatives — safer name suggestions)
 └── src/renderers/
     ├── report.mjs             (writeRun, renderRunMd + freshness banners)
     ├── packet.mjs             (renderPacketHtml, renderSummaryJson + freshness banners)
@@ -71,6 +75,14 @@ Classify findings (exact_conflict, confusable_risk, near_conflict, variant_taken
 [Optional] Corpus comparison (user-provided known marks) → additional findings
   ↓
 Score opinion (GREEN / YELLOW / RED) + compute score breakdown
+  ↓
+Build next actions (coaching prose based on tier + findings)
+  ↓
+Compute coverage score + disclaimer
+  ↓
+[Optional] Generate safer alternatives (--suggest) → opinion.saferAlternatives
+  ↓
+Redact evidence (strip tokens, Authorization headers, truncate oversized notes)
   ↓
 Build reservation links (dry-run URLs for available namespaces)
   ↓
@@ -124,6 +136,19 @@ The opinion engine produces both a rule-based tier (GREEN/YELLOW/RED) and a nume
 - **Score breakdown**: Weighted sub-scores for explainability. Does NOT override tier logic.
 - **Weight profiles**: Conservative, balanced, and aggressive profiles change relative importance.
 
+## DuPont-Lite analysis
+
+The scoring engine computes DuPont-inspired trademark analysis factors (`src/scoring/weights.mjs`):
+
+- **Similarity of marks**: Maximum similarity score from radar/corpus findings
+- **Channel overlap**: Ratio of channels with conflicts to total channels
+- **Fame proxy**: Fires when >3 radar results exceed 85% similarity (suggests established mark)
+- **Intent proxy**: Fires when edit-distance=1 variants are taken (typosquatting pattern)
+
+Each factor produces a 0-100 score with a deterministic rationale string. These are metadata for explainability -- they do NOT override the rule-based tier logic.
+
+> **Note**: DuPont-Lite is inspired by the multi-factor test from *In re E. I. du Pont de Nemours & Co.* but is NOT legal advice. It uses only publicly available data and algorithmic heuristics.
+
 ## Similarity engine
 
 The similarity engine (`src/scoring/similarity.mjs`) provides Jaro-Winkler string similarity combined with Metaphone phonetic analysis:
@@ -169,7 +194,9 @@ The collision radar adapter (`src/adapters/collision-radar.mjs`) searches for si
 
 - `searchGitHub(name)` — GitHub Search API (`/search/repositories`)
 - `searchNpm(name)` — npm registry search (`/-/v1/search`)
-- `scanAll(name)` — runs both in parallel via `Promise.allSettled()`
+- `searchCratesIo(name)` — crates.io search (`/api/v1/crates?q=`)
+- `searchDockerHub(name)` — Docker Hub search (`/v2/search/repositories?query=`)
+- `scanAll(name)` — runs enabled channels in parallel via `Promise.allSettled()` (channel-gated)
 
 Results use `namespace: "custom"` and `authority: "indicative"`. These are market-usage signals, not authoritative trademark searches. The similarity engine scores each result, and only results above the configured threshold (default: 0.70) are included.
 
@@ -214,6 +241,16 @@ Every namespace check produces an evidence object with:
 - Reproduction steps (curl command)
 
 This allows any finding to be traced back to its source and re-verified.
+
+## Evidence redaction
+
+The redaction module (`src/lib/redact.mjs`) strips sensitive data from evidence before writing:
+
+- `redactUrl(url)` — strips `token`, `access_token`, `api_key`, `key`, `secret`, `password` query params
+- `redactEvidence(evidence)` — strips tokens from `source.url`, replaces `Authorization: Bearer/token` in `repro[]`, truncates notes exceeding 50KB
+- `redactAllEvidence(evidenceArray)` — applies to all evidence objects
+
+Called automatically in `pipeline.mjs` before building the return object.
 
 ## Attorney packet
 
@@ -291,3 +328,59 @@ The publish module (`src/publish.mjs`) copies run artifacts for website consumpt
 - Copies `report.html`, `summary.json`, `manifest.json` to an output directory
 - Generates `index.html` listing when multiple sibling runs are published
 - Read-only against the source run directory
+
+## Adaptive backoff
+
+The adaptive backoff module (`src/lib/adaptive-backoff.mjs`) wraps a fetch function with per-host rate throttling:
+
+- Tracks `consecutiveFailures`, `backoffMs`, `lastFailureAt` per host
+- On 429: doubles `backoffMs` (min 1000ms, max 30000ms)
+- On 5xx: increases `backoffMs` by 50%
+- On success: halves `backoffMs` (floor 0), resets failure count
+- Respects `Retry-After` header (seconds or HTTP date)
+- Injectable `sleepFn` and `clockFn` for deterministic testing
+- `.getStats()` returns per-host backoff state
+
+Composes with `retryFetch()` — different responsibilities. Retry handles transient failures (immediate retry with jitter); adaptive backoff handles sustained pressure (progressive delay).
+
+Used automatically in batch mode to prevent overwhelming registries.
+
+## Batch resume
+
+The batch runner supports resuming from a previous incomplete batch:
+
+- `--resume <dir>` reads `batch/results.json` from a previous output directory
+- Builds a `Set` of already-completed names from previous results
+- Skips completed names (logged as "Skipping {name} — already completed")
+- Final results = previous results + new results, sorted by name
+- Output includes `resumedFrom` metadata in `results.json`
+
+This handles interrupted batches without re-checking names that already succeeded.
+
+## Cost tracking
+
+The pipeline supports cost tracking via an injectable callback:
+
+```javascript
+costTracker(adapterName, { cached: boolean })
+```
+
+In batch mode, this counts total API calls and cache hits per adapter. Results appear in `batchResult.costStats`:
+
+- `totalApiCalls`: total adapter calls made
+- `cachedCalls`: how many were served from cache
+- `adapterBreakdown`: per-adapter call/cache counts
+- `backoffEvents`: count of adaptive backoff delays triggered
+
+Cost stats render as a table in the batch dashboard HTML.
+
+## Doctor command
+
+The doctor module (`src/doctor.mjs`) runs environment diagnostics:
+
+- Node.js version >= 20
+- `GITHUB_TOKEN` presence (affects rate limits)
+- Network reachability (HEAD to npm registry)
+- Engine version display
+
+Run via `coe doctor`. Uses injectable `fetchFn` for testability.

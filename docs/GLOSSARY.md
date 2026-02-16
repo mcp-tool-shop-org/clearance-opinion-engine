@@ -131,3 +131,43 @@ All errors use the prefix `COE.<CATEGORY>.<TYPE>`:
 - `COE.BATCH.*` — batch input parsing errors
 - `COE.REFRESH.*` — refresh command errors
 - `COE.PUBLISH.*` — publish command errors
+- `COE.DOCTOR.*` — doctor command errors
+
+## topFactors
+The 3-5 most important factors driving the tier decision. Each factor has a factor name, statement template, weight classification (critical/major/moderate/minor), and category. Extracted deterministically from run data -- no LLM text.
+
+## riskNarrative
+A deterministic "If you do nothing..." paragraph summarizing the risk to the candidate name. Template-selected by tier + dominant factor category. Always 2-4 sentences.
+
+## DuPont-Lite
+A trademark-inspired analysis producing four numerical factors: similarity of marks, channel overlap, fame proxy, and intent proxy. Inspired by the DuPont multi-factor test but NOT legal advice. All factors are 0-100 scores with deterministic rationale strings.
+
+## saferAlternatives
+Deterministic alternative name suggestions generated using five strategies: prefix (go-), suffix (-js), separator (-app), abbreviation, and compound (-hub). Exactly 5 alternatives per candidate. Optionally re-checked against registries via `--suggest`.
+
+## redaction
+The process of stripping sensitive data (API tokens, Authorization headers) from evidence objects before writing to disk. Applied automatically by the pipeline. See `src/lib/redact.mjs`.
+
+## doctor
+The `coe doctor` command. Runs environment diagnostics: Node.js version, GITHUB_TOKEN presence, network reachability, and engine version. See `src/doctor.mjs`.
+
+## nextActions
+Coaching-oriented steps telling the user what to do next. Distinct from `recommendedActions` (which are reservation links/URLs). Each action has a `type`, `label`, `reason`, and `urgency` (high/medium/low). Types: `claim_now`, `register_domain`, `try_alternative`, `recheck_soon`, `consult_counsel`. Built by `buildNextActions()` in `src/scoring/opinion.mjs`.
+
+## coverageScore
+A 0-100 number measuring what fraction of requested namespace checks completed successfully. `(successful checks / total checks) × 100`. Excludes fuzzy variant checks. A score of 100 means all checks returned a definitive answer (available or taken). Computed by `computeCoverage()`.
+
+## uncheckedNamespaces
+An array of namespace names where the check returned `status: "unknown"` (typically due to network errors). Used alongside `coverageScore` to show which namespaces need re-checking.
+
+## disclaimer
+A template string appended to every opinion. States what the report is ("checks public namespace availability") and what it is not ("not a trademark search, legal opinion, freedom-to-operate analysis, or guarantee of rights"). Always includes the coverage percentage.
+
+## costStats
+Per-batch cost tracking data. Contains `totalApiCalls`, `cachedCalls`, `adapterBreakdown` (per-adapter call/cache counts), and `backoffEvents`. Appears in batch `results.json` and the batch dashboard HTML.
+
+## adaptiveBackoff
+A per-host fetch throttling mechanism. Tracks consecutive failures and progressively delays requests to overwhelmed hosts. 429 responses double the delay; 5xx responses increase by 50%; success halves the delay. Composes with `retryFetch()`. See `src/lib/adaptive-backoff.mjs`.
+
+## batch resume
+The `--resume <dir>` flag for `coe batch`. Reads previous batch results from the specified directory and skips names that were already completed. Handles interrupted batches without redundant API calls.

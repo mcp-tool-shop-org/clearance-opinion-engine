@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { scoreOpinion, classifyFindings } from "../../src/scoring/opinion.mjs";
+import {
+  scoreOpinion,
+  classifyFindings,
+  extractTopFactors,
+  generateRiskNarrative,
+} from "../../src/scoring/opinion.mjs";
 
 const AVAILABLE_CHECK = {
   id: "chk.npm.my-tool",
@@ -246,5 +251,129 @@ describe("classifyFindings", () => {
       VARIANTS_WITH_HOMOGLYPHS
     );
     assert.ok(!findings.some((f) => f.kind === "confusable_risk"));
+  });
+});
+
+// ── Phase 6: extractTopFactors ────────────────────────────────
+
+describe("extractTopFactors", () => {
+  it("exists and is a function", () => {
+    assert.equal(typeof extractTopFactors, "function");
+  });
+
+  it("returns array of 3-5 items for a RED run with exact conflicts", () => {
+    const data = {
+      checks: [TAKEN_CHECK],
+      findings: [
+        {
+          id: "fd.exact-conflict.npm.0",
+          candidateMark: "taken-tool",
+          kind: "exact_conflict",
+          summary: "Name taken in npm",
+          severity: "high",
+          evidenceRefs: ["ev.0"],
+        },
+        {
+          id: "fd.exact-conflict.pypi.1",
+          candidateMark: "taken-tool",
+          kind: "exact_conflict",
+          summary: "Name taken in pypi",
+          severity: "high",
+          evidenceRefs: ["ev.1"],
+        },
+        {
+          id: "fd.near-conflict.0",
+          candidateMark: "taken-tool",
+          kind: "near_conflict",
+          summary: 'Name "taken-tool" is near',
+          severity: "medium",
+          score: 75,
+          evidenceRefs: [],
+        },
+      ],
+    };
+    const context = { tier: "red", candidateName: "taken-tool" };
+    const factors = extractTopFactors(data, context);
+    assert.ok(Array.isArray(factors));
+    assert.ok(factors.length >= 3 && factors.length <= 5, `Expected 3-5 factors, got ${factors.length}`);
+  });
+
+  it("returns all_clear factor for GREEN run", () => {
+    const data = {
+      checks: [AVAILABLE_CHECK],
+      findings: [],
+    };
+    const context = { tier: "green", candidateName: "my-tool" };
+    const factors = extractTopFactors(data, context);
+    assert.ok(factors.some((f) => f.factor === "all_clear"));
+  });
+});
+
+// ── Phase 6: generateRiskNarrative ────────────────────────────
+
+describe("generateRiskNarrative", () => {
+  it("exists and is a function", () => {
+    assert.equal(typeof generateRiskNarrative, "function");
+  });
+
+  it("returns string for RED tier with namespace_collision top factor", () => {
+    const context = {
+      tier: "red",
+      topFactors: [
+        { factor: "namespace_collision", statement: "The name 'test' is taken", weight: "critical", category: "exact_conflict" },
+      ],
+      candidateName: "test",
+    };
+    const narrative = generateRiskNarrative(context);
+    assert.ok(typeof narrative === "string");
+    assert.ok(narrative.length > 20);
+  });
+
+  it("returns string for GREEN tier", () => {
+    const context = {
+      tier: "green",
+      topFactors: [
+        { factor: "all_clear", statement: "All namespaces available", weight: "minor", category: "all_clear" },
+      ],
+      candidateName: "safe-name",
+    };
+    const narrative = generateRiskNarrative(context);
+    assert.ok(typeof narrative === "string");
+    assert.ok(narrative.length > 20);
+  });
+
+  it("narrative contains the candidate name", () => {
+    const context = {
+      tier: "red",
+      topFactors: [
+        { factor: "namespace_collision", statement: "The name 'my-tool' is taken", weight: "critical", category: "exact_conflict" },
+      ],
+      candidateName: "my-tool",
+    };
+    const narrative = generateRiskNarrative(context);
+    assert.ok(narrative.includes("my-tool"), "Narrative should contain candidate name");
+  });
+});
+
+// ── Phase 6: scoreOpinion output includes topFactors and riskNarrative ──
+
+describe("scoreOpinion (Phase 6 additions)", () => {
+  it("output includes topFactors array", () => {
+    const result = scoreOpinion({
+      checks: [AVAILABLE_CHECK],
+      findings: [],
+      variants: VARIANTS_CLEAN,
+    });
+    assert.ok(Array.isArray(result.topFactors), "topFactors must be an array");
+  });
+
+  it("output includes riskNarrative string", () => {
+    const result = scoreOpinion({
+      checks: [AVAILABLE_CHECK],
+      findings: [],
+      variants: VARIANTS_CLEAN,
+    });
+    assert.ok(typeof result.riskNarrative === "string", "riskNarrative must be a string");
+    assert.ok(result.riskNarrative.length > 0, "riskNarrative must not be empty");
   });
 });

@@ -13,6 +13,417 @@
 
 import { computeScoreBreakdown } from "./weights.mjs";
 
+// ── Top Factors template catalog ─────────────────────────────────
+const FACTOR_TEMPLATES = {
+  namespace_collision: {
+    weight: "critical",
+    category: "exact_conflict",
+    template: (ctx) =>
+      `The name '${ctx.name}' is already claimed in ${ctx.namespace}`,
+  },
+  phonetic_overlap: {
+    weight: "critical",
+    category: "phonetic_conflict",
+    template: (ctx) =>
+      `The name sounds like '${ctx.conflictMark}' (${ctx.pct}% phonetic match)`,
+  },
+  confusable_variants: {
+    weight: "major",
+    category: "confusable_risk",
+    template: (ctx) =>
+      `${ctx.count} homoglyph variant(s) overlap with taken namespaces`,
+  },
+  fuzzy_squatting_risk: {
+    weight: "moderate",
+    category: "variant_taken",
+    template: (ctx) =>
+      `Edit-distance=1 variant '${ctx.variant}' is taken in ${ctx.namespace}`,
+  },
+  near_miss: {
+    weight: "moderate",
+    category: "near_conflict",
+    template: (ctx) =>
+      `Similar name '${ctx.mark}' found (${ctx.pct}% match)`,
+  },
+  coverage_gap: {
+    weight: "moderate",
+    category: "coverage_gap",
+    template: (ctx) =>
+      `${ctx.count} namespace check(s) could not be completed`,
+  },
+  all_clear: {
+    weight: "minor",
+    category: "all_clear",
+    template: (ctx) =>
+      `All ${ctx.count} namespaces available with no conflicts`,
+  },
+};
+
+const WEIGHT_ORDER = { critical: 0, major: 1, moderate: 2, minor: 3 };
+
+/**
+ * Extract the top 3-5 factors that drove the tier decision.
+ * Uses template strings — deterministic, no LLM text.
+ *
+ * @param {{ checks: object[], findings: object[] }} data
+ * @param {{ tier: string, candidateName: string }} context
+ * @returns {Array<{ factor: string, statement: string, weight: string, category: string }>}
+ */
+export function extractTopFactors(data, context) {
+  const { checks = [], findings = [] } = data;
+  const { tier, candidateName } = context;
+  const factors = [];
+
+  // Exact conflicts
+  const exactConflicts = findings.filter((f) => f.kind === "exact_conflict");
+  for (const f of exactConflicts) {
+    const ns = f.summary?.match(/in (\S+)$/)?.[1] || "a namespace";
+    factors.push({
+      factor: "namespace_collision",
+      statement: FACTOR_TEMPLATES.namespace_collision.template({
+        name: candidateName,
+        namespace: ns,
+      }),
+      weight: "critical",
+      category: "exact_conflict",
+    });
+  }
+
+  // Phonetic conflicts
+  const phoneticConflicts = findings.filter((f) => f.kind === "phonetic_conflict");
+  for (const f of phoneticConflicts) {
+    const pct = f.score || 0;
+    const mark = f.summary?.match(/Name "([^"]+)"/)?.[1] || "unknown";
+    factors.push({
+      factor: "phonetic_overlap",
+      statement: FACTOR_TEMPLATES.phonetic_overlap.template({
+        conflictMark: mark,
+        pct,
+      }),
+      weight: "critical",
+      category: "phonetic_conflict",
+    });
+  }
+
+  // Confusable risk
+  const confusableRisks = findings.filter((f) => f.kind === "confusable_risk");
+  if (confusableRisks.length > 0) {
+    factors.push({
+      factor: "confusable_variants",
+      statement: FACTOR_TEMPLATES.confusable_variants.template({
+        count: confusableRisks.length,
+      }),
+      weight: "major",
+      category: "confusable_risk",
+    });
+  }
+
+  // Variant taken (fuzzy squatting)
+  const variantTaken = findings.filter((f) => f.kind === "variant_taken");
+  for (const f of variantTaken) {
+    const variant = f.summary?.match(/variant "([^"]+)"/)?.[1] || "unknown";
+    const ns = f.summary?.match(/in (\S+)$/)?.[1] || "a namespace";
+    factors.push({
+      factor: "fuzzy_squatting_risk",
+      statement: FACTOR_TEMPLATES.fuzzy_squatting_risk.template({
+        variant,
+        namespace: ns,
+      }),
+      weight: "moderate",
+      category: "variant_taken",
+    });
+  }
+
+  // Near conflicts
+  const nearConflicts = findings.filter((f) => f.kind === "near_conflict");
+  for (const f of nearConflicts) {
+    const pct = f.score || 0;
+    const mark = f.summary?.match(/Name "([^"]+)"/)?.[1] || "unknown";
+    factors.push({
+      factor: "near_miss",
+      statement: FACTOR_TEMPLATES.near_miss.template({ mark, pct }),
+      weight: "moderate",
+      category: "near_conflict",
+    });
+  }
+
+  // Coverage gaps
+  const unknownChecks = checks.filter((c) => c.status === "unknown");
+  if (unknownChecks.length > 0) {
+    factors.push({
+      factor: "coverage_gap",
+      statement: FACTOR_TEMPLATES.coverage_gap.template({
+        count: unknownChecks.length,
+      }),
+      weight: "moderate",
+      category: "coverage_gap",
+    });
+  }
+
+  // All clear (GREEN only)
+  if (tier === "green" && factors.length === 0) {
+    const availCount = checks.filter((c) => c.status === "available").length;
+    factors.push({
+      factor: "all_clear",
+      statement: FACTOR_TEMPLATES.all_clear.template({ count: availCount }),
+      weight: "minor",
+      category: "all_clear",
+    });
+  }
+
+  // Sort by weight priority, then by factor name for determinism
+  factors.sort((a, b) => {
+    const wa = WEIGHT_ORDER[a.weight] ?? 99;
+    const wb = WEIGHT_ORDER[b.weight] ?? 99;
+    if (wa !== wb) return wa - wb;
+    return a.factor.localeCompare(b.factor);
+  });
+
+  // Clamp to 3-5
+  if (factors.length > 5) return factors.slice(0, 5);
+  // If fewer than 3 and GREEN, pad with all_clear
+  if (factors.length < 3 && tier === "green") {
+    while (factors.length < 3) {
+      factors.push({
+        factor: "all_clear",
+        statement: `No additional conflicts detected`,
+        weight: "minor",
+        category: "all_clear",
+      });
+    }
+  }
+
+  return factors;
+}
+
+// ── Risk Narrative templates ──────────────────────────────────────
+const NARRATIVE_TEMPLATES = {
+  red_exact: (ctx) =>
+    `If you proceed with '${ctx.name}', you will collide with an existing registered name in at least one namespace. ` +
+    `Users searching for your project may land on the existing package instead. ` +
+    `This creates immediate brand confusion and potential takedown risk.`,
+  red_phonetic: (ctx) =>
+    `If you proceed with '${ctx.name}', users who hear the name may confuse it with '${ctx.conflictMark}'. ` +
+    `Verbal recommendations and word-of-mouth discovery will be unreliable. ` +
+    `Consider choosing a phonetically distinct name.`,
+  red_confusable: (ctx) =>
+    `If you proceed with '${ctx.name}', homoglyph variants create visual confusion with existing names. ` +
+    `This enables typosquatting attacks and makes visual identification unreliable. ` +
+    `Consider choosing a name with fewer confusable characters.`,
+  yellow_near: (ctx) =>
+    `Proceeding with '${ctx.name}' carries moderate risk. ` +
+    `Similar names exist in the ecosystem that could cause confusion. ` +
+    `Monitor these names and consider establishing your brand early.`,
+  yellow_coverage: (ctx) =>
+    `Some namespaces could not be checked for '${ctx.name}'. ` +
+    `The name may appear safe but unverified channels could harbor conflicts. ` +
+    `Re-run checks when all services are reachable.`,
+  yellow_variant: (ctx) =>
+    `Edit-distance=1 variants of '${ctx.name}' are already taken in some registries. ` +
+    `This suggests the name space is crowded, increasing the risk of confusion or typosquatting. ` +
+    `Consider a more distinctive name.`,
+  green: (ctx) =>
+    `No conflicts detected for '${ctx.name}'. ` +
+    `The name appears safe to use across all checked namespaces. ` +
+    `Claim handles promptly as namespace availability changes over time.`,
+};
+
+/**
+ * Generate a deterministic risk narrative.
+ * Template-selected by tier + dominant factor category.
+ *
+ * @param {{ tier: string, topFactors: object[], candidateName: string }} context
+ * @returns {string} 2-4 sentence narrative
+ */
+export function generateRiskNarrative(context) {
+  const { tier, topFactors = [], candidateName } = context;
+  const dominant = topFactors[0]?.category || "all_clear";
+  const conflictMark = topFactors[0]?.statement?.match(/'([^']+)'/)?.[1] || "unknown";
+
+  const ctx = { name: candidateName, conflictMark };
+
+  if (tier === "green") {
+    return NARRATIVE_TEMPLATES.green(ctx);
+  }
+
+  if (tier === "red") {
+    if (dominant === "exact_conflict") return NARRATIVE_TEMPLATES.red_exact(ctx);
+    if (dominant === "phonetic_conflict") return NARRATIVE_TEMPLATES.red_phonetic(ctx);
+    if (dominant === "confusable_risk") return NARRATIVE_TEMPLATES.red_confusable(ctx);
+    return NARRATIVE_TEMPLATES.red_exact(ctx); // fallback
+  }
+
+  // yellow
+  if (dominant === "near_conflict") return NARRATIVE_TEMPLATES.yellow_near(ctx);
+  if (dominant === "coverage_gap") return NARRATIVE_TEMPLATES.yellow_coverage(ctx);
+  if (dominant === "variant_taken") return NARRATIVE_TEMPLATES.yellow_variant(ctx);
+  return NARRATIVE_TEMPLATES.yellow_near(ctx); // fallback
+}
+
+// ── Next Actions template catalog ─────────────────────────────────
+const ACTION_TEMPLATES = {
+  green: {
+    claim_now: {
+      urgency: "high",
+      label: (ctx) => `Claim '${ctx.name}' now`,
+      reason: (ctx) => `All ${ctx.availableCount} namespace(s) are available — claim on ${ctx.availableNamespaces} before someone else does.`,
+    },
+    register_domain: {
+      urgency: "medium",
+      label: () => "Register matching domains",
+      reason: (ctx) => `Register ${ctx.availableDomains} while available.`,
+    },
+  },
+  yellow: {
+    recheck_soon: {
+      urgency: "medium",
+      label: () => "Re-run with broader coverage",
+      reason: () => "Re-run with --radar to check for market-usage conflicts and improve coverage.",
+    },
+    try_alternative: {
+      urgency: "medium",
+      label: () => "Consider safer alternatives",
+      reason: (ctx) => `Consider safer alternatives: ${ctx.top2alternatives}.`,
+    },
+    consult_counsel: {
+      urgency: "low",
+      label: () => "Consult a trademark attorney",
+      reason: () => "If this name is business-critical, consult a trademark attorney before committing.",
+    },
+  },
+  red: {
+    try_alternative: {
+      urgency: "high",
+      label: () => "Choose a different name",
+      reason: (ctx) => `Choose a different name. Suggested: ${ctx.top2alternatives}.`,
+    },
+    consult_counsel: {
+      urgency: "high",
+      label: () => "Consult a trademark attorney",
+      reason: () => "Consult a trademark attorney before proceeding — direct conflicts exist.",
+    },
+  },
+};
+
+/**
+ * Build coaching-oriented next actions based on tier + findings.
+ * Distinct from recommendedActions (which are reservation links).
+ *
+ * @param {{ checks: object[], findings: object[] }} data
+ * @param {{ tier: string, candidateName: string, saferAlternatives?: object[] }} context
+ * @returns {Array<{ type: string, label: string, reason: string, urgency: string }>}
+ */
+export function buildNextActions(data, context) {
+  const { checks = [] } = data;
+  const { tier, candidateName, saferAlternatives = [] } = context;
+  const actions = [];
+
+  const available = checks.filter((c) => c.status === "available" && !c.query?.isVariant);
+  const top2 = saferAlternatives.slice(0, 2).map((a) => a.name).join(", ") || "none generated";
+
+  if (tier === "green") {
+    // Claim now
+    const availNamespaces = [...new Set(available.map((c) => c.namespace))].join(", ");
+    actions.push({
+      type: "claim_now",
+      ...buildAction(ACTION_TEMPLATES.green.claim_now, {
+        name: candidateName,
+        availableCount: available.length,
+        availableNamespaces: availNamespaces || "available namespaces",
+      }),
+    });
+
+    // Register domain (only if domain channel was checked and domains available)
+    const availDomains = available.filter((c) => c.namespace === "domain");
+    if (availDomains.length > 0) {
+      const domainList = availDomains.map((c) => c.query?.value || "").filter(Boolean).join(", ");
+      actions.push({
+        type: "register_domain",
+        ...buildAction(ACTION_TEMPLATES.green.register_domain, {
+          availableDomains: domainList || "available domains",
+        }),
+      });
+    }
+  } else if (tier === "yellow") {
+    // Recheck
+    actions.push({
+      type: "recheck_soon",
+      ...buildAction(ACTION_TEMPLATES.yellow.recheck_soon, {}),
+    });
+
+    // Try alternative (only if saferAlternatives present)
+    if (saferAlternatives.length > 0) {
+      actions.push({
+        type: "try_alternative",
+        ...buildAction(ACTION_TEMPLATES.yellow.try_alternative, {
+          top2alternatives: top2,
+        }),
+      });
+    }
+
+    // Consult counsel
+    actions.push({
+      type: "consult_counsel",
+      ...buildAction(ACTION_TEMPLATES.yellow.consult_counsel, {}),
+    });
+  } else {
+    // RED
+    actions.push({
+      type: "try_alternative",
+      ...buildAction(ACTION_TEMPLATES.red.try_alternative, {
+        top2alternatives: top2,
+      }),
+    });
+    actions.push({
+      type: "consult_counsel",
+      ...buildAction(ACTION_TEMPLATES.red.consult_counsel, {}),
+    });
+  }
+
+  return actions;
+}
+
+function buildAction(template, ctx) {
+  return {
+    label: template.label(ctx),
+    reason: template.reason(ctx),
+    urgency: template.urgency,
+  };
+}
+
+/**
+ * Compute coverage score and disclaimer.
+ *
+ * @param {object[]} checks - All namespace checks
+ * @param {string[]} channels - Channels that were requested
+ * @returns {{ coverageScore: number, uncheckedNamespaces: string[], disclaimer: string }}
+ */
+export function computeCoverage(checks, channels) {
+  // Filter to non-variant checks only
+  const primaryChecks = checks.filter((c) => !c.query?.isVariant);
+
+  const totalPossible = primaryChecks.length || 1;
+  const successful = primaryChecks.filter((c) => c.status !== "unknown").length;
+  const coverageScore = Math.round((successful / totalPossible) * 100);
+
+  // Unchecked = namespaces where status is unknown
+  const uncheckedNamespaces = primaryChecks
+    .filter((c) => c.status === "unknown")
+    .map((c) => c.namespace)
+    .filter((v, i, a) => a.indexOf(v) === i) // unique
+    .sort();
+
+  const channelList = channels.join(", ");
+  const disclaimer =
+    `This report checks public namespace availability across ${channelList}. ` +
+    `It does not check trademark databases, common-law marks, or pending applications. ` +
+    `This is not: a trademark search, a legal opinion, a freedom-to-operate analysis, or a guarantee of rights. ` +
+    `Coverage: ${coverageScore}% of requested channels. ` +
+    `Consult a trademark attorney for authoritative guidance.`;
+
+  return { coverageScore, uncheckedNamespaces, disclaimer };
+}
+
 /**
  * Build reservation links for a candidate name based on check results.
  *
@@ -301,6 +712,24 @@ export function scoreOpinion(data, opts = {}) {
   // Compute explainable score breakdown
   const scoreBreakdown = computeScoreBreakdown(data, opts);
 
+  // Extract top factors
+  const topFactors = extractTopFactors(data, { tier, candidateName });
+
+  // Generate risk narrative
+  const riskNarrative = generateRiskNarrative({ tier, topFactors, candidateName });
+
+  // Build next actions (coaching-oriented)
+  const nextActions = buildNextActions(data, { tier, candidateName });
+
+  // Compute coverage score + disclaimer
+  const intakeChannels = data.intake?.channels
+    ? checks.map((c) => c.namespace).filter((v, i, a) => a.indexOf(v) === i && !checks.find((cc) => cc.namespace === v && cc.query?.isVariant))
+    : [];
+  const requestedChannels = data.intake?.riskTolerance
+    ? (opts.channels || ["github", "npm", "pypi", "domain"])
+    : ["github", "npm", "pypi", "domain"];
+  const coverage = computeCoverage(checks, requestedChannels);
+
   return {
     tier,
     summary,
@@ -310,6 +739,12 @@ export function scoreOpinion(data, opts = {}) {
     recommendedActions,
     closestConflicts,
     scoreBreakdown,
+    topFactors,
+    riskNarrative,
+    nextActions,
+    coverageScore: coverage.coverageScore,
+    uncheckedNamespaces: coverage.uncheckedNamespaces,
+    disclaimer: coverage.disclaimer,
   };
 }
 

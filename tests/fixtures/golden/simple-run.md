@@ -8,6 +8,8 @@
 
 All namespaces available for "golden-test". No conflicts detected. Safe to proceed with claims.
 
+> **Coverage:** 100% | 3/3 namespaces checked
+
 ## Executive Summary
 
 | Metric | Value |
@@ -44,6 +46,18 @@ All namespaces available for "golden-test". No conflicts detected. Safe to proce
 | Domain Availability | 50/100 | 10% | Domain not checked |
 
 **Overall Score: 89/100** (Green threshold: 80)
+
+### Top Factors
+
+| # | Factor | Statement | Weight |
+|---|--------|-----------|--------|
+| 1 | all_clear | All 3 namespaces available with no conflicts | minor |
+| 2 | all_clear | No additional conflicts detected | minor |
+| 3 | all_clear | No additional conflicts detected | minor |
+
+### Risk Narrative
+
+> No conflicts detected for 'golden-test'. The name appears safe to use across all checked namespaces. Claim handles promptly as namespace availability changes over time.
 
 ## Namespace Checks
 
@@ -96,6 +110,10 @@ Canonical: `golden-test`
    - https://www.namecheap.com/domains/registration/results/?domain=golden-test.com
    - https://www.namecheap.com/domains/registration/results/?domain=golden-test.dev
 
+## Next Actions
+
+1. 🔴 **Claim 'golden-test' now** — All 3 namespace(s) are available — claim on github_repo, npm, pypi before someone else does.
+
 ## Evidence Chain
 
 | ID | Type | System | URL | SHA-256 |
@@ -114,6 +132,10 @@ Canonical: `golden-test`
 - This engine does not check trademark databases (USPTO, EUIPO, etc.).
 - Domain name availability is not checked in this version.
 - No market-usage signal search was performed. Use --radar to enable.
+
+## Disclaimer
+
+> This report checks public namespace availability across github, npm, pypi, domain. It does not check trademark databases, common-law marks, or pending applications. This is not: a trademark search, a legal opinion, a freedom-to-operate analysis, or a guarantee of rights. Coverage: 100% of requested channels. Consult a trademark attorney for authoritative guidance.
 
 ---
 

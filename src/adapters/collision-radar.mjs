@@ -260,17 +260,246 @@ export function createCollisionRadarAdapter(fetchFn = globalThis.fetch, opts = {
   }
 
   /**
-   * Scan all sources and return aggregated results.
+   * Search crates.io for similar crate names.
    *
    * @param {string} candidateMark
    * @param {{ now?: string }} [checkOpts]
    * @returns {Promise<{ checks: object[], evidence: object[] }>}
    */
+  async function searchCratesIo(candidateMark, checkOpts = {}) {
+    const now = checkOpts.now || new Date().toISOString();
+    const url = `https://crates.io/api/v1/crates?q=${encodeURIComponent(candidateMark)}&per_page=5`;
+
+    const checks = [];
+    const evidence = [];
+
+    try {
+      const res = await fetchFn(url, {
+        headers: { "User-Agent": "clearance-opinion-engine" },
+      });
+      const bodyText = await res.text();
+      const sha256 = hashString(bodyText);
+
+      const searchChkId = checkId("collision-radar", `cratesio-search-${candidateMark}`);
+      const searchEvId = evidenceId(searchChkId, 0);
+
+      evidence.push({
+        id: searchEvId,
+        type: "json",
+        source: { system: "cratesio_search", url, method: "GET" },
+        observedAt: now,
+        sha256,
+        bytes: bodyText.length,
+        repro: [`curl -s "${url}" -H "User-Agent: clearance-opinion-engine"`],
+      });
+
+      if (res.status !== 200) {
+        checks.push({
+          id: searchChkId,
+          namespace: "custom",
+          query: { candidateMark, value: candidateMark },
+          status: "unknown",
+          authority: "indicative",
+          observedAt: now,
+          evidenceRef: searchEvId,
+          errors: [{ code: "COE.ADAPTER.RADAR_CRATESIO_FAIL", message: `crates.io search returned ${res.status}` }],
+        });
+        return { checks, evidence };
+      }
+
+      const data = JSON.parse(bodyText);
+      const crates = data.crates || [];
+
+      for (const crate of crates) {
+        const crateName = crate.name || "";
+        const comparison = comparePair(candidateMark, crateName);
+        if (comparison.overall < similarityThreshold) continue;
+
+        const itemChkId = checkId("collision-radar", `cratesio-${crateName}`);
+        const itemEvId = evidenceId(itemChkId, 0);
+
+        checks.push({
+          id: itemChkId,
+          namespace: "custom",
+          query: { candidateMark, value: crateName },
+          status: "taken",
+          authority: "indicative",
+          observedAt: now,
+          evidenceRef: itemEvId,
+          errors: [],
+          details: {
+            source: "cratesio_search",
+            crateName,
+            downloads: crate.downloads || 0,
+            similarity: comparison,
+          },
+        });
+
+        evidence.push({
+          id: itemEvId,
+          type: "json",
+          source: { system: "cratesio_search", url: `https://crates.io/crates/${encodeURIComponent(crateName)}`, method: "GET" },
+          observedAt: now,
+          sha256,
+          repro: [`curl -s "https://crates.io/api/v1/crates/${encodeURIComponent(crateName)}"`],
+        });
+      }
+    } catch (err) {
+      const errChkId = checkId("collision-radar", `cratesio-search-${candidateMark}`);
+      const errEvId = evidenceId(errChkId, 0);
+      checks.push({
+        id: errChkId,
+        namespace: "custom",
+        query: { candidateMark, value: candidateMark },
+        status: "unknown",
+        authority: "indicative",
+        observedAt: now,
+        evidenceRef: errEvId,
+        errors: [{ code: "COE.ADAPTER.RADAR_CRATESIO_FAIL", message: err.message }],
+      });
+      evidence.push({
+        id: errEvId,
+        type: "json",
+        source: { system: "cratesio_search", url, method: "GET" },
+        observedAt: now,
+        notes: `Network error: ${err.message}`,
+      });
+    }
+
+    return { checks, evidence };
+  }
+
+  /**
+   * Search Docker Hub for similar repository names.
+   *
+   * @param {string} candidateMark
+   * @param {{ now?: string }} [checkOpts]
+   * @returns {Promise<{ checks: object[], evidence: object[] }>}
+   */
+  async function searchDockerHub(candidateMark, checkOpts = {}) {
+    const now = checkOpts.now || new Date().toISOString();
+    const url = `https://hub.docker.com/v2/search/repositories/?query=${encodeURIComponent(candidateMark)}&page_size=5`;
+
+    const checks = [];
+    const evidence = [];
+
+    try {
+      const res = await fetchFn(url);
+      const bodyText = await res.text();
+      const sha256 = hashString(bodyText);
+
+      const searchChkId = checkId("collision-radar", `dockerhub-search-${candidateMark}`);
+      const searchEvId = evidenceId(searchChkId, 0);
+
+      evidence.push({
+        id: searchEvId,
+        type: "json",
+        source: { system: "dockerhub_search", url, method: "GET" },
+        observedAt: now,
+        sha256,
+        bytes: bodyText.length,
+        repro: [`curl -s "${url}"`],
+      });
+
+      if (res.status !== 200) {
+        checks.push({
+          id: searchChkId,
+          namespace: "custom",
+          query: { candidateMark, value: candidateMark },
+          status: "unknown",
+          authority: "indicative",
+          observedAt: now,
+          evidenceRef: searchEvId,
+          errors: [{ code: "COE.ADAPTER.RADAR_DOCKERHUB_FAIL", message: `Docker Hub search returned ${res.status}` }],
+        });
+        return { checks, evidence };
+      }
+
+      const data = JSON.parse(bodyText);
+      const repos = data.results || [];
+
+      for (const repo of repos) {
+        const repoName = repo.repo_name || repo.name || "";
+        const comparison = comparePair(candidateMark, repoName);
+        if (comparison.overall < similarityThreshold) continue;
+
+        const itemChkId = checkId("collision-radar", `dockerhub-${repoName}`);
+        const itemEvId = evidenceId(itemChkId, 0);
+
+        checks.push({
+          id: itemChkId,
+          namespace: "custom",
+          query: { candidateMark, value: repoName },
+          status: "taken",
+          authority: "indicative",
+          observedAt: now,
+          evidenceRef: itemEvId,
+          errors: [],
+          details: {
+            source: "dockerhub_search",
+            repoName,
+            stars: repo.star_count || 0,
+            similarity: comparison,
+          },
+        });
+
+        evidence.push({
+          id: itemEvId,
+          type: "json",
+          source: { system: "dockerhub_search", url: `https://hub.docker.com/r/${encodeURIComponent(repoName)}`, method: "GET" },
+          observedAt: now,
+          sha256,
+          repro: [`curl -s "https://hub.docker.com/v2/repositories/${encodeURIComponent(repoName)}"`],
+        });
+      }
+    } catch (err) {
+      const errChkId = checkId("collision-radar", `dockerhub-search-${candidateMark}`);
+      const errEvId = evidenceId(errChkId, 0);
+      checks.push({
+        id: errChkId,
+        namespace: "custom",
+        query: { candidateMark, value: candidateMark },
+        status: "unknown",
+        authority: "indicative",
+        observedAt: now,
+        evidenceRef: errEvId,
+        errors: [{ code: "COE.ADAPTER.RADAR_DOCKERHUB_FAIL", message: err.message }],
+      });
+      evidence.push({
+        id: errEvId,
+        type: "json",
+        source: { system: "dockerhub_search", url, method: "GET" },
+        observedAt: now,
+        notes: `Network error: ${err.message}`,
+      });
+    }
+
+    return { checks, evidence };
+  }
+
+  /**
+   * Scan all sources and return aggregated results.
+   * Includes crates.io / Docker Hub when their channels are provided.
+   *
+   * @param {string} candidateMark
+   * @param {{ now?: string, channels?: string[] }} [checkOpts]
+   * @returns {Promise<{ checks: object[], evidence: object[] }>}
+   */
   async function scanAll(candidateMark, checkOpts = {}) {
-    const results = await Promise.allSettled([
+    const channels = checkOpts.channels || [];
+    const promises = [
       searchGitHub(candidateMark, checkOpts),
       searchNpm(candidateMark, checkOpts),
-    ]);
+    ];
+
+    if (channels.includes("cratesio")) {
+      promises.push(searchCratesIo(candidateMark, checkOpts));
+    }
+    if (channels.includes("dockerhub")) {
+      promises.push(searchDockerHub(candidateMark, checkOpts));
+    }
+
+    const results = await Promise.allSettled(promises);
 
     const checks = [];
     const evidence = [];
@@ -280,11 +509,10 @@ export function createCollisionRadarAdapter(fetchFn = globalThis.fetch, opts = {
         checks.push(...result.value.checks);
         evidence.push(...result.value.evidence);
       }
-      // Rejected promises are silently ignored — each search has its own error handling
     }
 
     return { checks, evidence };
   }
 
-  return { searchGitHub, searchNpm, scanAll, ADAPTER_VERSION };
+  return { searchGitHub, searchNpm, searchCratesIo, searchDockerHub, scanAll, ADAPTER_VERSION };
 }

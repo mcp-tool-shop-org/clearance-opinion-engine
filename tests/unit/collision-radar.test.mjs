@@ -212,4 +212,102 @@ describe("scanAll", () => {
 
     assert.deepEqual(res1, res2);
   });
+
+  it("includes cratesio when channels contains cratesio", async () => {
+    const cratesBody = JSON.stringify({ crates: [{ name: "my-cool-tool", downloads: 100 }] });
+    const radar = createCollisionRadarAdapter(async (url) => {
+      if (url.includes("api.github.com")) {
+        return { status: 200, text: async () => '{"items":[],"total_count":0}' };
+      }
+      if (url.includes("crates.io")) {
+        return { status: 200, text: async () => cratesBody };
+      }
+      return { status: 200, text: async () => '{"objects":[],"total":0}' };
+    }, { similarityThreshold: 0.70 });
+
+    const { checks, evidence } = await radar.scanAll("my-cool-tool", { now: NOW, channels: ["cratesio"] });
+    const cratesChecks = checks.filter((c) => c.details?.source === "cratesio_search");
+    assert.ok(cratesChecks.length >= 1, "Should have cratesio results");
+  });
+
+  it("includes dockerhub when channels contains dockerhub", async () => {
+    const dockerBody = JSON.stringify({ results: [{ repo_name: "my-cool-tool", star_count: 5 }] });
+    const radar = createCollisionRadarAdapter(async (url) => {
+      if (url.includes("api.github.com")) {
+        return { status: 200, text: async () => '{"items":[],"total_count":0}' };
+      }
+      if (url.includes("hub.docker.com")) {
+        return { status: 200, text: async () => dockerBody };
+      }
+      return { status: 200, text: async () => '{"objects":[],"total":0}' };
+    }, { similarityThreshold: 0.70 });
+
+    const { checks, evidence } = await radar.scanAll("my-cool-tool", { now: NOW, channels: ["dockerhub"] });
+    const dockerChecks = checks.filter((c) => c.details?.source === "dockerhub_search");
+    assert.ok(dockerChecks.length >= 1, "Should have dockerhub results");
+  });
+});
+
+// ── searchCratesIo ──────────────────────────────────────────
+
+describe("searchCratesIo", () => {
+  it("returns checks and evidence for 200 response", async () => {
+    const cratesBody = JSON.stringify({ crates: [{ name: "my-cool-tool", downloads: 500 }] });
+    const radar = createCollisionRadarAdapter(async () => ({
+      status: 200,
+      text: async () => cratesBody,
+    }), { similarityThreshold: 0.70 });
+
+    const { checks, evidence } = await radar.searchCratesIo("my-cool-tool", { now: NOW });
+    assert.ok(checks.length >= 1);
+    assert.ok(evidence.length >= 1);
+    assert.ok(checks.every((c) => c.namespace === "custom"));
+    const match = checks.find((c) => c.status === "taken");
+    assert.ok(match, "Should have a taken check for exact match");
+    assert.ok(match.details.source === "cratesio_search");
+  });
+
+  it("handles non-200 gracefully", async () => {
+    const radar = createCollisionRadarAdapter(async () => ({
+      status: 500,
+      text: async () => "Internal Server Error",
+    }));
+
+    const { checks } = await radar.searchCratesIo("test", { now: NOW });
+    assert.equal(checks.length, 1);
+    assert.equal(checks[0].status, "unknown");
+    assert.ok(checks[0].errors[0].code === "COE.ADAPTER.RADAR_CRATESIO_FAIL");
+  });
+});
+
+// ── searchDockerHub ─────────────────────────────────────────
+
+describe("searchDockerHub", () => {
+  it("returns checks and evidence for 200 response", async () => {
+    const dockerBody = JSON.stringify({ results: [{ repo_name: "my-cool-tool", star_count: 10 }] });
+    const radar = createCollisionRadarAdapter(async () => ({
+      status: 200,
+      text: async () => dockerBody,
+    }), { similarityThreshold: 0.70 });
+
+    const { checks, evidence } = await radar.searchDockerHub("my-cool-tool", { now: NOW });
+    assert.ok(checks.length >= 1);
+    assert.ok(evidence.length >= 1);
+    assert.ok(checks.every((c) => c.namespace === "custom"));
+    const match = checks.find((c) => c.status === "taken");
+    assert.ok(match, "Should have a taken check for exact match");
+    assert.ok(match.details.source === "dockerhub_search");
+  });
+
+  it("handles non-200 gracefully", async () => {
+    const radar = createCollisionRadarAdapter(async () => ({
+      status: 403,
+      text: async () => "Forbidden",
+    }));
+
+    const { checks } = await radar.searchDockerHub("test", { now: NOW });
+    assert.equal(checks.length, 1);
+    assert.equal(checks[0].status, "unknown");
+    assert.ok(checks[0].errors[0].code === "COE.ADAPTER.RADAR_DOCKERHUB_FAIL");
+  });
 });

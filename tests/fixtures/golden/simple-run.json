@@ -289,7 +289,57 @@
       "tierThresholds": {
         "green": 80,
         "yellow": 50
+      },
+      "dupontFactors": {
+        "similarityOfMarks": {
+          "score": 0,
+          "rationale": "No similar marks detected in market search"
+        },
+        "channelOverlap": {
+          "score": 0,
+          "rationale": "0 of 1 channel(s) have conflicts"
+        },
+        "fameProxy": {
+          "score": 0,
+          "rationale": "No high-similarity results found in market search"
+        },
+        "intentProxy": {
+          "score": 0,
+          "rationale": "No typosquatting indicators detected"
+        }
       }
-    }
+    },
+    "topFactors": [
+      {
+        "factor": "all_clear",
+        "statement": "All 3 namespaces available with no conflicts",
+        "weight": "minor",
+        "category": "all_clear"
+      },
+      {
+        "factor": "all_clear",
+        "statement": "No additional conflicts detected",
+        "weight": "minor",
+        "category": "all_clear"
+      },
+      {
+        "factor": "all_clear",
+        "statement": "No additional conflicts detected",
+        "weight": "minor",
+        "category": "all_clear"
+      }
+    ],
+    "riskNarrative": "No conflicts detected for 'golden-test'. The name appears safe to use across all checked namespaces. Claim handles promptly as namespace availability changes over time.",
+    "nextActions": [
+      {
+        "type": "claim_now",
+        "label": "Claim 'golden-test' now",
+        "reason": "All 3 namespace(s) are available — claim on github_repo, npm, pypi before someone else does.",
+        "urgency": "high"
+      }
+    ],
+    "coverageScore": 100,
+    "uncheckedNamespaces": [],
+    "disclaimer": "This report checks public namespace availability across github, npm, pypi, domain. It does not check trademark databases, common-law marks, or pending applications. This is not: a trademark search, a legal opinion, a freedom-to-operate analysis, or a guarantee of rights. Coverage: 100% of requested channels. Consult a trademark attorney for authoritative guidance."
   }
 }

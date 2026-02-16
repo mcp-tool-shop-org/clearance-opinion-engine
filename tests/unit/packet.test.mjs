@@ -340,4 +340,134 @@ describe("renderSummaryJson", () => {
     const summary = renderSummaryJson(run);
     assert.equal(summary.corpusMatchCount, 1);
   });
+
+  it("includes topFactors and riskNarrative", () => {
+    const run = makeTestRun({
+      opinion: {
+        ...makeTestRun().opinion,
+        topFactors: [
+          { factor: "all_clear", statement: "All namespaces available", weight: "minor", category: "all_clear" },
+        ],
+        riskNarrative: "No conflicts detected for 'my-cool-tool'.",
+      },
+    });
+    const summary = renderSummaryJson(run);
+    assert.ok(Array.isArray(summary.topFactors));
+    assert.equal(summary.topFactors.length, 1);
+    assert.equal(summary.topFactors[0].factor, "all_clear");
+    assert.ok(typeof summary.riskNarrative === "string");
+    assert.ok(summary.riskNarrative.includes("my-cool-tool"));
+  });
+});
+
+// ── Phase 6: renderPacketHtml additional sections ──────────────
+
+describe("renderPacketHtml (Phase 6 additions)", () => {
+  it("includes Top Factors section when present", () => {
+    const run = makeTestRun({
+      opinion: {
+        ...makeTestRun().opinion,
+        topFactors: [
+          { factor: "all_clear", statement: "All namespaces available", weight: "minor", category: "all_clear" },
+        ],
+      },
+    });
+    const html = renderPacketHtml(run);
+    assert.ok(html.includes("Top Factors"));
+    assert.ok(html.includes("all_clear"));
+  });
+
+  it("includes Risk Narrative when present", () => {
+    const run = makeTestRun({
+      opinion: {
+        ...makeTestRun().opinion,
+        riskNarrative: "No conflicts detected for 'my-cool-tool'. The name appears safe.",
+      },
+    });
+    const html = renderPacketHtml(run);
+    assert.ok(html.includes("Risk Narrative"));
+    assert.ok(html.includes("No conflicts detected"));
+  });
+
+  it("includes Safer Alternatives when present", () => {
+    const run = makeTestRun({
+      opinion: {
+        ...makeTestRun().opinion,
+        saferAlternatives: [
+          { name: "go-my-cool-tool", strategy: "prefix", availability: { checked: false, summary: "Not checked" } },
+          { name: "my-cool-tool-js", strategy: "suffix", availability: { checked: false, summary: "Not checked" } },
+        ],
+      },
+    });
+    const html = renderPacketHtml(run);
+    assert.ok(html.includes("Safer Alternatives"));
+    assert.ok(html.includes("go-my-cool-tool"));
+    assert.ok(html.includes("prefix"));
+  });
+});
+
+// ── Phase 6: XSS security tests ──────────────────────────────
+
+describe("renderPacketHtml (XSS security)", () => {
+  it("escapes script tags in Top Factors statement", () => {
+    const run = makeTestRun({
+      opinion: {
+        ...makeTestRun().opinion,
+        topFactors: [
+          { factor: "test", statement: '<script>alert("xss")</script>', weight: "critical", category: "test" },
+        ],
+      },
+    });
+    const html = renderPacketHtml(run);
+    assert.ok(!html.includes('<script>alert("xss")</script>'));
+    assert.ok(html.includes("&lt;script&gt;"));
+  });
+
+  it("escapes script tags in Risk Narrative", () => {
+    const run = makeTestRun({
+      opinion: {
+        ...makeTestRun().opinion,
+        riskNarrative: '<img onerror="alert(1)" src=x>',
+      },
+    });
+    const html = renderPacketHtml(run);
+    assert.ok(!html.includes('<img onerror='));
+    assert.ok(html.includes("&lt;img"));
+  });
+
+  it("escapes script tags in Safer Alternatives name", () => {
+    const run = makeTestRun({
+      opinion: {
+        ...makeTestRun().opinion,
+        saferAlternatives: [
+          { name: '<script>alert(1)</script>', strategy: "prefix", availability: { checked: false, summary: "Not checked" } },
+        ],
+      },
+    });
+    const html = renderPacketHtml(run);
+    // The raw script tag must NOT appear in the output
+    assert.ok(!html.includes('<script>alert(1)</script>'));
+    // The opening tag must be escaped (escapeHtml also escapes / to &#x2F;)
+    assert.ok(html.includes("&lt;script&gt;"));
+  });
+
+  it("escapes DuPont factor rationale", () => {
+    const run = makeTestRun({
+      opinion: {
+        ...makeTestRun().opinion,
+        scoreBreakdown: {
+          ...makeTestRun().opinion.scoreBreakdown,
+          dupontFactors: {
+            similarityOfMarks: { score: 50, rationale: '<script>alert("xss")</script>' },
+            channelOverlap: { score: 0, rationale: "safe" },
+            fameProxy: { score: 0, rationale: "safe" },
+            intentProxy: { score: 0, rationale: "safe" },
+          },
+        },
+      },
+    });
+    const html = renderPacketHtml(run);
+    assert.ok(!html.includes('<script>alert("xss")</script>'));
+    assert.ok(html.includes("&lt;script&gt;"));
+  });
 });

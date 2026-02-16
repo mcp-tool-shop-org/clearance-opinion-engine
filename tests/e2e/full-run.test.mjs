@@ -852,4 +852,134 @@ describe("E2E: full pipeline", () => {
     assert.ok(variantSet.fuzzyVariants.length > 0, "Should have at least 1 fuzzy variant");
     assert.ok(!variantSet.fuzzyVariants.includes("test"), "Original name should not be in fuzzy variants");
   });
+
+  // ── Phase 7 tests ──────────────────────────────────────────────
+
+  it("opinion includes nextActions array with 2-4 items", async () => {
+    const run = await runPipeline("phase7-test", allAvailableFetch());
+
+    assert.ok(Array.isArray(run.opinion.nextActions), "Should have nextActions");
+    assert.ok(run.opinion.nextActions.length >= 1, "Should have at least 1 next action");
+    assert.ok(run.opinion.nextActions.length <= 4, "Should have at most 4 next actions");
+
+    for (const action of run.opinion.nextActions) {
+      assert.ok(action.type, "Each action should have a type");
+      assert.ok(action.label, "Each action should have a label");
+      assert.ok(action.reason, "Each action should have a reason");
+      assert.ok(["high", "medium", "low"].includes(action.urgency), `Urgency should be high/medium/low, got ${action.urgency}`);
+    }
+  });
+
+  it("GREEN opinion nextActions include claim_now", async () => {
+    const run = await runPipeline("green-actions-test", allAvailableFetch());
+
+    assert.equal(run.opinion.tier, "green");
+    const claimAction = run.opinion.nextActions.find((a) => a.type === "claim_now");
+    assert.ok(claimAction, "GREEN tier should have claim_now action");
+    assert.equal(claimAction.urgency, "high");
+  });
+
+  it("RED opinion nextActions include try_alternative and consult_counsel", async () => {
+    const run = await runPipeline("red-actions-test", npmTakenFetch());
+
+    assert.equal(run.opinion.tier, "red");
+    const tryAlt = run.opinion.nextActions.find((a) => a.type === "try_alternative");
+    const consult = run.opinion.nextActions.find((a) => a.type === "consult_counsel");
+    assert.ok(tryAlt, "RED tier should have try_alternative action");
+    assert.ok(consult, "RED tier should have consult_counsel action");
+    assert.equal(tryAlt.urgency, "high");
+    assert.equal(consult.urgency, "high");
+  });
+
+  it("opinion includes coverageScore between 0 and 100", async () => {
+    const run = await runPipeline("coverage-test", allAvailableFetch());
+
+    assert.ok(typeof run.opinion.coverageScore === "number", "Should have coverageScore");
+    assert.ok(run.opinion.coverageScore >= 0, "Coverage should be >= 0");
+    assert.ok(run.opinion.coverageScore <= 100, "Coverage should be <= 100");
+  });
+
+  it("all-available run has 100% coverage", async () => {
+    const run = await runPipeline("full-coverage-test", allAvailableFetch());
+
+    assert.equal(run.opinion.coverageScore, 100);
+    assert.deepEqual(run.opinion.uncheckedNamespaces, []);
+  });
+
+  it("network errors produce uncheckedNamespaces", async () => {
+    const run = await runPipeline("error-coverage-test", networkErrorFetch());
+
+    assert.ok(run.opinion.coverageScore < 100, "Coverage should be < 100 with errors");
+    assert.ok(run.opinion.uncheckedNamespaces.length > 0, "Should have unchecked namespaces");
+  });
+
+  it("opinion includes disclaimer string", async () => {
+    const run = await runPipeline("disclaimer-test", allAvailableFetch());
+
+    assert.ok(typeof run.opinion.disclaimer === "string", "Should have disclaimer");
+    assert.ok(run.opinion.disclaimer.includes("not"), "Disclaimer should contain 'not'");
+    assert.ok(run.opinion.disclaimer.includes("trademark"), "Disclaimer should mention trademark");
+    assert.ok(run.opinion.disclaimer.includes("Coverage:"), "Disclaimer should include coverage percentage");
+    assert.ok(run.opinion.disclaimer.includes("freedom-to-operate"), "Disclaimer should mention freedom-to-operate");
+  });
+
+  it("uncheckedNamespaces is always a sorted array", async () => {
+    const run = await runPipeline("unchecked-test", allAvailableFetch());
+
+    assert.ok(Array.isArray(run.opinion.uncheckedNamespaces), "Should be an array");
+    // Verify sorted
+    const sorted = [...run.opinion.uncheckedNamespaces].sort();
+    assert.deepEqual(run.opinion.uncheckedNamespaces, sorted, "Should be sorted");
+  });
+
+  it("summary JSON includes Phase 7 fields", async () => {
+    const run = await runPipeline("summary-p7-test", allAvailableFetch());
+    const summary = renderSummaryJson(run);
+
+    assert.ok(Array.isArray(summary.nextActions), "Summary should include nextActions");
+    assert.ok(typeof summary.coverageScore === "number", "Summary should include coverageScore");
+    assert.ok(typeof summary.disclaimer === "string", "Summary should include disclaimer");
+  });
+
+  it("markdown includes Next Actions section for GREEN", async () => {
+    const run = await runPipeline("md-next-actions-test", allAvailableFetch());
+    const md = renderRunMd(run);
+
+    assert.ok(md.includes("## Next Actions"), "Markdown should include Next Actions section");
+  });
+
+  it("markdown includes disclaimer footer", async () => {
+    const run = await runPipeline("md-disclaimer-test", allAvailableFetch());
+    const md = renderRunMd(run);
+
+    assert.ok(md.includes("trademark"), "Markdown should include disclaimer text");
+  });
+
+  it("HTML includes Next Actions section", async () => {
+    const run = await runPipeline("html-next-test", allAvailableFetch());
+    const html = renderPacketHtml(run);
+
+    assert.ok(html.includes("Next Actions"), "HTML should include Next Actions section");
+  });
+
+  it("HTML includes disclaimer section", async () => {
+    const run = await runPipeline("html-disclaimer-test", allAvailableFetch());
+    const html = renderPacketHtml(run);
+
+    assert.ok(html.includes("Disclaimer"), "HTML should include Disclaimer section");
+  });
+
+  it("determinism with Phase 7 fields", async () => {
+    const run1 = await runPipeline("det-p7-test", allAvailableFetch());
+    const run2 = await runPipeline("det-p7-test", allAvailableFetch());
+
+    // Phase 7 specific fields should be identical
+    assert.deepEqual(run1.opinion.nextActions, run2.opinion.nextActions);
+    assert.equal(run1.opinion.coverageScore, run2.opinion.coverageScore);
+    assert.deepEqual(run1.opinion.uncheckedNamespaces, run2.opinion.uncheckedNamespaces);
+    assert.equal(run1.opinion.disclaimer, run2.opinion.disclaimer);
+
+    // Full run still deterministic
+    assert.deepEqual(run1, run2);
+  });
 });

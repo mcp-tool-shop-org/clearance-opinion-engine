@@ -47,6 +47,8 @@ Use `--channels <group>` for presets, or `--channels +cratesio,+dockerhub` for a
 |--------|-----------------|--------|
 | Collision Radar | GitHub repos | `GET /search/repositories?q={name}` → similarity scoring |
 | Collision Radar | npm packages | `GET /-/v1/search?text={name}` → similarity scoring |
+| Collision Radar | crates.io crates | `GET https://crates.io/api/v1/crates?q={name}` → similarity scoring |
+| Collision Radar | Docker Hub repos | `GET https://hub.docker.com/v2/search/repositories?query={name}` → similarity scoring |
 | Corpus | User-provided marks | Offline Jaro-Winkler + Metaphone comparison |
 
 All adapter calls use exponential backoff retry (2 retries, 500ms base delay). Opt-in disk caching reduces repeated API calls.
@@ -88,6 +90,30 @@ Weight profiles (`--risk` flag): **conservative** (default), **balanced**, **agg
 
 > **Note**: The tier is always rule-based — exact conflicts produce RED regardless of the numerical score. The breakdown is additive metadata for explainability only.
 
+### Opinion v2 enhancements
+
+The opinion engine produces additional analysis (v0.6.0+):
+
+| Feature | Description |
+|---------|-------------|
+| Top Factors | 3-5 most important factors driving the tier decision, with weight classification |
+| Risk Narrative | A deterministic "If you do nothing..." paragraph summarizing the risk |
+| DuPont-Lite Analysis | Similarity of marks, channel overlap, fame proxy, and intent proxy scores |
+| Safer Alternatives | 5 deterministic alternative name suggestions using prefix/suffix/separator/abbreviation/compound strategies |
+
+Top factors and risk narratives use template catalogs — deterministic, no LLM text. DuPont-Lite factors are inspired by the DuPont trademark analysis framework but are NOT legal advice.
+
+### Coaching output (v0.7.0+)
+
+| Feature | Description |
+|---------|-------------|
+| Next Actions | 2-4 coaching steps ("what to do next") based on tier + findings |
+| Coverage Score | 0-100% measure of how many requested namespaces were successfully checked |
+| Unchecked Namespaces | List of namespaces that returned unknown status |
+| Disclaimer | Legal-clarity footer stating what the report is and is not |
+
+Next actions are distinct from `recommendedActions` (which are reservation links). They provide coaching prose: "Claim now", "Re-run with --radar", "Consult a trademark attorney", etc.
+
 ---
 
 ## Output format
@@ -113,10 +139,30 @@ A condensed output for integrations: tier, overall score, namespace statuses, fi
 
 ---
 
+## Installation
+
+```bash
+# Install globally from npm
+npm i -g @mcptoolshop/clearance-opinion-engine
+
+# Or run directly with npx
+npx @mcptoolshop/clearance-opinion-engine check my-cool-tool
+
+# Or clone and run locally
+git clone https://github.com/mcp-tool-shop-org/clearance-opinion-engine.git
+cd clearance-opinion-engine
+node src/index.mjs check my-cool-tool
+```
+
+---
+
 ## Usage
 
 ```bash
 # Check a name across default channels (github, npm, pypi, domain)
+coe check my-cool-tool
+
+# Or if running from source:
 node src/index.mjs check my-cool-tool
 
 # Check specific channels only
@@ -156,6 +202,12 @@ node src/index.mjs check my-cool-tool --output ./my-reports
 # Enable collision radar (GitHub + npm search for similar names)
 node src/index.mjs check my-cool-tool --radar
 
+# Generate safer alternative name suggestions
+node src/index.mjs check my-cool-tool --suggest
+
+# Run environment diagnostics
+node src/index.mjs doctor
+
 # Compare against a corpus of known marks
 node src/index.mjs check my-cool-tool --corpus marks.json
 
@@ -175,6 +227,9 @@ node src/index.mjs batch names.txt --channels github,npm --output reports
 
 # Check multiple names from a JSON file with per-name config
 node src/index.mjs batch names.json --concurrency 4 --cache-dir .coe-cache
+
+# Resume a previous batch (skips already-completed names)
+node src/index.mjs batch names.txt --resume reports/batch-2026-02-15 --output reports
 
 # ── Refresh ─────────────────────────────────────────────────
 
@@ -247,7 +302,8 @@ No config file required. All options are CLI flags:
 | `--org` | _(none)_ | GitHub org to check for org-name availability |
 | `--risk` | `conservative` | Risk tolerance: `conservative`, `balanced`, `aggressive` |
 | `--output` | `reports/` | Output directory for run artifacts |
-| `--radar` | _(off)_ | Enable collision radar (GitHub + npm search for similar names) |
+| `--radar` | _(off)_ | Enable collision radar (GitHub + npm + crates.io + Docker Hub search for similar names) |
+| `--suggest` | _(off)_ | Generate safer alternative name suggestions in the opinion |
 | `--corpus` | _(none)_ | Path to JSON corpus of known marks to compare against |
 | `--cache-dir` | _(off)_ | Directory for caching adapter responses |
 | `--max-age-hours` | `24` | Cache TTL in hours (requires `--cache-dir`) |
@@ -255,6 +311,7 @@ No config file required. All options are CLI flags:
 | `--hfOwner` | _(none)_ | Hugging Face owner (user/org) — required when `huggingface` channel is enabled |
 | `--fuzzyQueryMode` | `registries` | Fuzzy variant query mode: `off`, `registries`, `all` |
 | `--concurrency` | `4` | Max simultaneous checks in batch mode |
+| `--resume` | _(none)_ | Resume batch from a previous output directory (skips completed names) |
 | `--variantBudget` | `12` | Max fuzzy variants to query per registry (max: 30) |
 
 ### Environment variables
@@ -301,6 +358,9 @@ All tests use fixture-injected adapters (zero network calls). Golden snapshots e
 | `COE.ADAPTER.HF_FAIL` | Hugging Face API returned unexpected error |
 | `COE.ADAPTER.RADAR_GITHUB_FAIL` | GitHub Search API unreachable |
 | `COE.ADAPTER.RADAR_NPM_FAIL` | npm Search API unreachable |
+| `COE.ADAPTER.RADAR_CRATESIO_FAIL` | crates.io Search API unreachable |
+| `COE.ADAPTER.RADAR_DOCKERHUB_FAIL` | Docker Hub Search API unreachable |
+| `COE.DOCTOR.FATAL` | Doctor command failed |
 | `COE.DOCKER.NAMESPACE_REQUIRED` | Docker Hub channel enabled without `--dockerNamespace` |
 | `COE.HF.OWNER_REQUIRED` | Hugging Face channel enabled without `--hfOwner` |
 | `COE.VARIANT.FUZZY_HIGH` | Fuzzy variant count exceeds threshold (informational) |
@@ -333,6 +393,7 @@ See [docs/RUNBOOK.md](docs/RUNBOOK.md) for the complete error reference and trou
 - **Conservative**: defaults to YELLOW/RED when uncertain
 - **No secrets in output**: API tokens never appear in reports
 - **XSS-safe**: all user strings are HTML-escaped in the attorney packet
+- **Evidence redaction**: tokens, API keys, and Authorization headers are stripped before writing
 
 ---
 

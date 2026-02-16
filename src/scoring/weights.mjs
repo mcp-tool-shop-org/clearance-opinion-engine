@@ -140,6 +140,9 @@ export function computeScoreBreakdown(data, opts = {}) {
 
   const overallScore = Math.round(weightedSum / totalWeight);
 
+  // --- DuPont-lite factors ---
+  const dupontFactors = computeDupontFactors(data);
+
   return {
     namespaceAvailability: {
       score: nsAvailabilityScore,
@@ -163,5 +166,70 @@ export function computeScoreBreakdown(data, opts = {}) {
     },
     overallScore,
     tierThresholds: thresholds,
+    dupontFactors,
+  };
+}
+
+/**
+ * Compute DuPont-lite factors for trademark-style analysis.
+ * All factors are deterministic — no LLM text.
+ *
+ * @param {{ checks: object[], findings: object[], intake?: object }} data
+ * @returns {{ similarityOfMarks: { score: number, rationale: string }, channelOverlap: { score: number, rationale: string }, fameProxy: { score: number, rationale: string }, intentProxy: { score: number, rationale: string } }}
+ */
+export function computeDupontFactors(data) {
+  const { checks = [], findings = [], intake } = data;
+
+  // 1. Similarity of marks — max overall similarity from radar/corpus findings
+  let maxSimilarity = 0;
+  let maxSimMark = "";
+  let maxSimLooks = "";
+  let maxSimSounds = "";
+  for (const c of checks) {
+    if (c.details?.similarity) {
+      const sim = c.details.similarity;
+      if (sim.overall > maxSimilarity) {
+        maxSimilarity = sim.overall;
+        maxSimMark = c.query?.value || "unknown";
+        maxSimLooks = sim.looks?.label || "unknown";
+        maxSimSounds = sim.sounds?.label || "unknown";
+      }
+    }
+  }
+  const similarityScore = Math.round(maxSimilarity * 100);
+  const similarityRationale = maxSimilarity > 0
+    ? `Highest similarity: ${similarityScore}% (${maxSimLooks} visual, ${maxSimSounds} phonetic) against '${maxSimMark}'`
+    : "No similar marks detected in market search";
+
+  // 2. Channel overlap — channels where conflicts found / total intake channels
+  const intakeChannels = intake?.channels || [];
+  const totalChannels = intakeChannels.length || 1;
+  const takenChecks = checks.filter((c) => c.status === "taken" && c.namespace !== "custom");
+  const takenNamespaces = new Set(takenChecks.map((c) => c.namespace));
+  const overlapCount = takenNamespaces.size;
+  const channelOverlapScore = Math.min(Math.round((overlapCount / totalChannels) * 100), 100);
+  const channelOverlapRationale = `${overlapCount} of ${totalChannels} channel(s) have conflicts`;
+
+  // 3. Fame proxy — fires if >3 radar results with similarity >= 0.85
+  const highSimCount = checks.filter(
+    (c) => c.details?.similarity?.overall >= 0.85 && c.namespace === "custom"
+  ).length;
+  const fameScore = Math.min(highSimCount * 25, 100);
+  const fameRationale = highSimCount > 0
+    ? `${highSimCount} high-similarity result(s) in market search suggest an established mark`
+    : "No high-similarity results found in market search";
+
+  // 4. Intent proxy — fires if variant_taken findings exist (typosquat pattern)
+  const variantTakenCount = findings.filter((f) => f.kind === "variant_taken").length;
+  const intentScore = Math.min(variantTakenCount * 30, 100);
+  const intentRationale = variantTakenCount > 0
+    ? `${variantTakenCount} edit-distance=1 variant(s) taken — possible typosquatting risk`
+    : "No typosquatting indicators detected";
+
+  return {
+    similarityOfMarks: { score: similarityScore, rationale: similarityRationale },
+    channelOverlap: { score: channelOverlapScore, rationale: channelOverlapRationale },
+    fameProxy: { score: fameScore, rationale: fameRationale },
+    intentProxy: { score: intentScore, rationale: intentRationale },
   };
 }

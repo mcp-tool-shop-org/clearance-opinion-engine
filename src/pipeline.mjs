@@ -23,9 +23,11 @@ import { loadCorpus, compareAgainstCorpus } from "./adapters/corpus.mjs";
 import { createCache } from "./lib/cache.mjs";
 import { generateAllVariants, selectTopN } from "./variants/index.mjs";
 import { scoreOpinion, classifyFindings } from "./scoring/opinion.mjs";
+import { generateAlternatives, recheckAlternatives } from "./scoring/alternatives.mjs";
+import { redactAllEvidence } from "./lib/redact.mjs";
 import { fail } from "./lib/errors.mjs";
 
-const VERSION = "0.5.0";
+const VERSION = "0.7.0";
 
 /**
  * Wrap an adapter call with cache.
@@ -68,6 +70,7 @@ export async function withCache(cache, adapter, version, query, fetchFn) {
  * @param {string} [opts.hfOwner] - Hugging Face owner
  * @param {string} [opts.riskTolerance] - Risk level
  * @param {boolean} [opts.useRadar] - Enable collision radar
+ * @param {boolean} [opts.suggest] - Generate safer alternatives (and optionally recheck)
  * @param {string} [opts.corpusPath] - Path to corpus file
  * @param {string} [opts.fuzzyQueryMode] - Fuzzy query mode
  * @param {number} [opts.variantBudget] - Max fuzzy variants to query
@@ -85,6 +88,7 @@ export async function runCheck(candidateName, opts = {}) {
     hfOwner = null,
     riskTolerance = "conservative",
     useRadar = false,
+    suggest = false,
     corpusPath = null,
     fuzzyQueryMode = "registries",
     variantBudget = 12,
@@ -92,6 +96,7 @@ export async function runCheck(candidateName, opts = {}) {
     now = new Date().toISOString(),
     cache = null,
     engineVersion = VERSION,
+    costTracker = null,
   } = opts;
 
   const dateStr = now.slice(0, 10);
@@ -101,6 +106,16 @@ export async function runCheck(candidateName, opts = {}) {
     maxRetries: 2,
     baseDelayMs: 500,
   });
+
+  // Cost tracking wrapper
+  const trackedWithCache = async (cacheInst, adapter, version, query, fn) => {
+    const result = await withCache(cacheInst, adapter, version, query, fn);
+    if (costTracker) {
+      const cached = result.check?.cacheHit || false;
+      costTracker(adapter, { cached });
+    }
+    return result;
+  };
 
   // 1. Build intake
   const intake = {
@@ -112,8 +127,8 @@ export async function runCheck(candidateName, opts = {}) {
       if (c === "npm") return "open-source";
       if (c === "pypi") return "open-source";
       if (c === "cratesio") return "open-source";
-      if (c === "dockerhub") return "SaaS";
-      if (c === "huggingface") return "SaaS";
+      if (c === "dockerhub") return "saas";
+      if (c === "huggingface") return "saas";
       if (c === "domain") return "other";
       return "other";
     }),
@@ -131,7 +146,7 @@ export async function runCheck(candidateName, opts = {}) {
     const gh = createGitHubAdapter(fetchWithRetry);
 
     if (org) {
-      const result = await withCache(cache, "github.org", engineVersion, { org }, async () => {
+      const result = await trackedWithCache(cache, "github.org", engineVersion, { org }, async () => {
         return gh.checkOrg(org, { now });
       });
       allChecks.push(result.check);
@@ -139,7 +154,7 @@ export async function runCheck(candidateName, opts = {}) {
     }
 
     const repoOwner = org || candidateName;
-    const result = await withCache(cache, "github.repo", engineVersion, { owner: repoOwner, repo: candidateName }, async () => {
+    const result = await trackedWithCache(cache, "github.repo", engineVersion, { owner: repoOwner, repo: candidateName }, async () => {
       return gh.checkRepo(repoOwner, candidateName, { now });
     });
     allChecks.push(result.check);
@@ -148,7 +163,7 @@ export async function runCheck(candidateName, opts = {}) {
 
   if (channels.includes("npm")) {
     const npm = createNpmAdapter(fetchWithRetry);
-    const result = await withCache(cache, "npm", engineVersion, { name: candidateName }, async () => {
+    const result = await trackedWithCache(cache, "npm", engineVersion, { name: candidateName }, async () => {
       return npm.checkPackage(candidateName, { now });
     });
     allChecks.push(result.check);
@@ -157,7 +172,7 @@ export async function runCheck(candidateName, opts = {}) {
 
   if (channels.includes("pypi")) {
     const pypi = createPyPIAdapter(fetchWithRetry);
-    const result = await withCache(cache, "pypi", engineVersion, { name: candidateName }, async () => {
+    const result = await trackedWithCache(cache, "pypi", engineVersion, { name: candidateName }, async () => {
       return pypi.checkPackage(candidateName, { now });
     });
     allChecks.push(result.check);
@@ -167,7 +182,7 @@ export async function runCheck(candidateName, opts = {}) {
   if (channels.includes("domain")) {
     const domain = createDomainAdapter(fetchWithRetry);
     for (const tld of domain.tlds) {
-      const result = await withCache(cache, "domain", engineVersion, { name: candidateName, tld }, async () => {
+      const result = await trackedWithCache(cache, "domain", engineVersion, { name: candidateName, tld }, async () => {
         return domain.checkDomain(candidateName, tld, { now });
       });
       allChecks.push(result.check);
@@ -178,7 +193,7 @@ export async function runCheck(candidateName, opts = {}) {
   // 3a. New ecosystem adapters
   if (channels.includes("cratesio")) {
     const crates = createCratesIoAdapter(fetchWithRetry);
-    const result = await withCache(cache, "cratesio", engineVersion, { name: candidateName }, async () => {
+    const result = await trackedWithCache(cache, "cratesio", engineVersion, { name: candidateName }, async () => {
       return crates.checkCrate(candidateName, { now });
     });
     allChecks.push(result.check);
@@ -187,7 +202,7 @@ export async function runCheck(candidateName, opts = {}) {
 
   if (channels.includes("dockerhub")) {
     const docker = createDockerHubAdapter(fetchWithRetry);
-    const result = await withCache(cache, "dockerhub", engineVersion, { namespace: dockerNamespace, name: candidateName }, async () => {
+    const result = await trackedWithCache(cache, "dockerhub", engineVersion, { namespace: dockerNamespace, name: candidateName }, async () => {
       return docker.checkRepo(dockerNamespace, candidateName, { now });
     });
     allChecks.push(result.check);
@@ -196,13 +211,13 @@ export async function runCheck(candidateName, opts = {}) {
 
   if (channels.includes("huggingface")) {
     const hf = createHuggingFaceAdapter(fetchWithRetry);
-    const modelResult = await withCache(cache, "huggingface.model", engineVersion, { owner: hfOwner, name: candidateName }, async () => {
+    const modelResult = await trackedWithCache(cache, "huggingface.model", engineVersion, { owner: hfOwner, name: candidateName }, async () => {
       return hf.checkModel(hfOwner, candidateName, { now });
     });
     allChecks.push(modelResult.check);
     allEvidence.push(modelResult.evidence);
 
-    const spaceResult = await withCache(cache, "huggingface.space", engineVersion, { owner: hfOwner, name: candidateName }, async () => {
+    const spaceResult = await trackedWithCache(cache, "huggingface.space", engineVersion, { owner: hfOwner, name: candidateName }, async () => {
       return hf.checkSpace(hfOwner, candidateName, { now });
     });
     allChecks.push(spaceResult.check);
@@ -214,8 +229,8 @@ export async function runCheck(candidateName, opts = {}) {
     const radar = createCollisionRadarAdapter(fetchWithRetry, {
       similarityThreshold: 0.70,
     });
-    const radarResult = await withCache(cache, "collision-radar", engineVersion, { name: candidateName }, async () => {
-      return radar.scanAll(candidateName, { now });
+    const radarResult = await trackedWithCache(cache, "collision-radar", engineVersion, { name: candidateName }, async () => {
+      return radar.scanAll(candidateName, { now, channels });
     });
     allChecks.push(...(radarResult.checks || []));
     allEvidence.push(...(radarResult.evidence || []));
@@ -242,7 +257,7 @@ export async function runCheck(candidateName, opts = {}) {
 
     for (const variant of variantCandidates) {
       for (const [adapterName, checkFn] of registryAdapters) {
-        const result = await withCache(cache, `fuzzy.${adapterName}`, engineVersion, { name: variant }, async () => {
+        const result = await trackedWithCache(cache, `fuzzy.${adapterName}`, engineVersion, { name: variant }, async () => {
           return checkFn(variant, { now });
         });
         result.check.query.isVariant = true;
@@ -277,6 +292,15 @@ export async function runCheck(candidateName, opts = {}) {
     { checks: allChecks, findings, variants, evidence: allEvidence },
     { riskTolerance }
   );
+
+  // 5b. Safer alternatives (--suggest)
+  if (suggest) {
+    const alternatives = generateAlternatives(candidateName);
+    opinion.saferAlternatives = alternatives;
+  }
+
+  // 5c. Redact evidence (strip tokens, auth headers, truncate oversized notes)
+  redactAllEvidence(allEvidence);
 
   // 6. Build run object
   const inputsSha256 = hashObject(intake);

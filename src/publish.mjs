@@ -48,6 +48,34 @@ export function publishRun(runDir, outputDir) {
     throw publishError("COE.PUBLISH.NO_FILES", `No publishable files found in ${absRunDir}`);
   }
 
+  // Generate clearance-index.json from summary.json (if present)
+  const summaryPath = join(absRunDir, "summary.json");
+  if (existsSync(summaryPath)) {
+    try {
+      const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
+      const slug = basename(absOutputDir);
+      const clearanceIndex = {
+        schemaVersion: "1.0.0",
+        slug,
+        tier: summary.tier || "unknown",
+        overallScore: summary.overallScore ?? null,
+        candidates: summary.candidates || [],
+        topFactors: summary.topFactors || [],
+        riskNarrative: summary.riskNarrative || null,
+        generatedAt: summary.generatedAt || new Date().toISOString(),
+        reportUrl: `${slug}/report.html`,
+      };
+      writeFileSync(
+        join(absOutputDir, "clearance-index.json"),
+        JSON.stringify(clearanceIndex, null, 2) + "\n",
+        "utf8"
+      );
+      published.push("clearance-index.json");
+    } catch {
+      // If summary can't be parsed, skip clearance-index generation
+    }
+  }
+
   // Check if sibling directories also have summary.json → generate index
   const parentDir = resolve(absOutputDir, "..");
   let indexGenerated = false;

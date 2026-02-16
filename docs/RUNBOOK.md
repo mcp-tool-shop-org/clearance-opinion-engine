@@ -54,6 +54,13 @@ Operational reference for clearance-opinion-engine. All error codes, troubleshoo
 | `COE.ADAPTER.RADAR_GITHUB_FAIL` | GitHub Search API unreachable | Check network; set `GITHUB_TOKEN` for higher rate limits |
 | `COE.ADAPTER.RADAR_NPM_FAIL` | npm Search API unreachable | Check network; registry.npmjs.org may be down |
 
+### COE.ADAPTER.RADAR_* — Extended Collision Radar Errors
+
+| Code | Meaning | Fix |
+|------|---------|-----|
+| `COE.ADAPTER.RADAR_CRATESIO_FAIL` | crates.io Search API unreachable | Check network; crates.io may be down |
+| `COE.ADAPTER.RADAR_DOCKERHUB_FAIL` | Docker Hub Search API unreachable | Check network; hub.docker.com may be down |
+
 ### COE.CORPUS.* — Corpus Errors
 
 | Code | Meaning | Fix |
@@ -171,6 +178,25 @@ rm -rf .coe-cache
 - Collision radar uses `Promise.allSettled()` — if one source fails, the other still returns results
 - Use `--cache-dir` to avoid repeated API calls during development
 
+### Doctor Command
+
+Use `coe doctor` to diagnose environment issues:
+
+1. **Node.js version**: Requires >= 20. Upgrade Node if failing.
+2. **GITHUB_TOKEN**: Warn if not set. Set to increase GitHub API rate limit from 60 to 5,000 requests/hour.
+3. **Network reachability**: Tests connectivity to npm registry. If failing, check internet connection or proxy settings.
+4. **Engine version**: Informational -- shows current version.
+
+### Evidence Redaction
+
+Evidence objects are automatically sanitized before writing to disk:
+
+- URL query parameters (`token`, `access_token`, `api_key`, `key`, `secret`, `password`) are replaced with `[REDACTED]`
+- `Authorization: Bearer/token` headers in reproduction steps are replaced with `[REDACTED]`
+- Evidence notes exceeding 50KB are truncated with `[TRUNCATED]` marker
+
+This is applied automatically by the pipeline. No user action required.
+
 ### Batch Mode
 
 Common batch scenarios:
@@ -190,6 +216,57 @@ Use `coe refresh <dir>` to update stale evidence:
 3. Re-runs only stale adapter calls
 4. Writes refreshed run to `<dir>-refresh/`
 5. Original directory is never modified
+
+### Batch Resume
+
+Use `--resume <dir>` to continue from a previous incomplete batch:
+
+```bash
+# Initial batch (interrupted or failed on some names)
+coe batch names.txt --output reports
+
+# Resume — skips completed names
+coe batch names.txt --resume reports/batch-2026-02-15 --output reports
+```
+
+Common issues:
+
+1. **Wrong resume directory**: The `--resume` path must point to the batch output directory (the one containing `batch/results.json`), not the input file
+2. **All names already done**: If every name is already in the previous results, the batch completes instantly with 0 new checks
+3. **Different options**: Resume uses the current command's options (channels, risk, etc.) for new names — it does NOT inherit from the previous batch
+4. **Cost stats**: Cost stats in the resumed batch cover only the new names. Previous batch stats are not merged
+
+### Adaptive Backoff
+
+The engine uses per-host adaptive backoff in batch mode to avoid overwhelming registries:
+
+- **429 responses**: Delay doubles (min 1000ms, max 30000ms)
+- **5xx responses**: Delay increases by 50%
+- **Success**: Delay halves (floor 0)
+- **Retry-After header**: Respected if present (uses max of header value and current backoff)
+
+Adaptive backoff is automatic in batch mode and requires no configuration. It composes with the standard retry logic — retry handles immediate transient failures, adaptive backoff handles sustained pressure.
+
+To monitor backoff behavior, check `costStats.backoffEvents` in the batch `results.json`.
+
+### npm Publish Checklist
+
+Before publishing a new version:
+
+```bash
+# 1. All tests pass
+npm run test:all
+
+# 2. Version is correct in package.json, src/index.mjs, src/pipeline.mjs
+grep '"version"' package.json
+grep 'VERSION' src/index.mjs src/pipeline.mjs
+
+# 3. Tarball contains expected files
+npm pack --dry-run
+
+# 4. Verify README, LICENSE, src/, schema/ in tarball
+# 5. Create GitHub release (triggers publish workflow)
+```
 
 ### Output Files
 

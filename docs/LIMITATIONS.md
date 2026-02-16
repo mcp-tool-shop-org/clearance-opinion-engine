@@ -71,6 +71,22 @@ Hugging Face checks require a `--hfOwner <owner>` flag specifying the Hugging Fa
 - Homoglyph detection covers ASCII + Cyrillic + Greek confusables (not all Unicode scripts)
 - Does not detect semantic similarity (different words with same meaning)
 
+## DuPont-Lite Analysis Limitations
+
+- The DuPont-Lite analysis is **NOT legal advice** and is not a substitute for a proper trademark likelihood-of-confusion analysis
+- Only 4 of the 13 DuPont factors are approximated (similarity of marks, channel overlap, fame proxy, intent proxy)
+- Fame proxy uses GitHub/npm star count as a rough proxy -- this is NOT a reliable indicator of trademark fame
+- Intent proxy detects typosquatting patterns only -- it cannot determine actual intent
+- All scores are algorithmic heuristics, not legal conclusions
+
+## Safer Alternatives Limitations
+
+- Alternative suggestions are heuristic -- they have NOT been checked against trademark databases
+- Only 5 strategies are used (prefix, suffix, separator, abbreviation, compound)
+- Alternatives are generated from the candidate name only -- they do not consider market positioning or branding
+- Even when `--suggest` re-checks alternatives against registries, this only covers namespace availability, NOT trademark clearance
+- Short candidate names (<=6 chars) may produce abbreviations that are too short to be useful
+
 ## Point-in-Time Checks
 
 All namespace checks are point-in-time snapshots. Between the check and any action you take:
@@ -93,6 +109,14 @@ All namespace checks are point-in-time snapshots. Between the check and any acti
 - Freshness banners are informational — they do not change the opinion tier
 - The refresh command re-runs only stale adapter calls, not the entire pipeline
 - If adapter responses change between the original run and refresh, the opinion may change
+
+## Disclaimer and Coverage
+
+Every report includes a disclaimer and coverage score. Important caveats:
+
+- **Coverage ≠ comprehensiveness**: A 100% coverage score means all requested namespace checks returned a definitive answer. It does NOT mean all possible namespaces or trademark databases were checked
+- **nextActions are suggestions, not directives**: The coaching output ("Claim now", "Consult an attorney") is generic advice based on the tier — it is not tailored legal or business guidance
+- **Disclaimer text is a template**: The disclaimer states what the report is and is not. It is not a substitute for reading and understanding the limitations described here
 
 ## Determinism Scope
 

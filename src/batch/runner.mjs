@@ -7,9 +7,12 @@
  * Results are sorted by candidate name for deterministic output.
  */
 
+import { readFileSync, existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { runCheck } from "../pipeline.mjs";
 import { createPool } from "../lib/concurrency.mjs";
 import { createCache } from "../lib/cache.mjs";
+import { createAdaptiveBackoff } from "../lib/adaptive-backoff.mjs";
 
 /**
  * Run the clearance pipeline for multiple candidate names.
@@ -30,6 +33,7 @@ import { createCache } from "../lib/cache.mjs";
  * @param {number} [opts.maxAgeHours] - Cache TTL
  * @param {Function} [opts.fetchFn] - Injectable fetch function
  * @param {string} [opts.now] - Injectable ISO timestamp
+ * @param {string} [opts.resumeDir] - Path to previous batch output for resume
  * @returns {Promise<{ results: object[], errors: object[], stats: object }>}
  */
 export async function runBatch(names, opts = {}) {
@@ -48,6 +52,7 @@ export async function runBatch(names, opts = {}) {
     maxAgeHours,
     fetchFn,
     now,
+    resumeDir,
   } = opts;
 
   const startMs = Date.now();
@@ -55,16 +60,66 @@ export async function runBatch(names, opts = {}) {
   // Shared cache instance for all names
   const cache = cacheDir ? createCache(cacheDir, { maxAgeHours }) : null;
 
+  // Adaptive backoff: wrap fetch for sustained rate-limit handling
+  const baseFetch = fetchFn || globalThis.fetch;
+  const adaptiveFetch = createAdaptiveBackoff(baseFetch);
+
+  // Cost stats tracker
+  const costBreakdown = {};
+  let totalApiCalls = 0;
+  let cachedCalls = 0;
+  function costTracker(adapterName, info) {
+    if (!costBreakdown[adapterName]) {
+      costBreakdown[adapterName] = { calls: 0, cached: 0 };
+    }
+    costBreakdown[adapterName].calls++;
+    totalApiCalls++;
+    if (info?.cached) {
+      costBreakdown[adapterName].cached++;
+      cachedCalls++;
+    }
+  }
+
   // Concurrency pool
   const pool = createPool(concurrency);
 
   const results = [];
   const errors = [];
 
-  // Enqueue each name
+  // Resume support: load previously completed results
+  const completedNames = new Set();
+  let resumed = false;
+  if (resumeDir) {
+    const resultsPath = join(resolve(resumeDir), "batch", "results.json");
+    if (existsSync(resultsPath)) {
+      try {
+        const prev = JSON.parse(readFileSync(resultsPath, "utf8"));
+        const prevResults = Array.isArray(prev) ? prev : (prev.results || []);
+        for (const r of prevResults) {
+          const name = r.intake?.candidates?.[0]?.mark || r.name;
+          if (name) {
+            completedNames.add(name);
+            // Re-add previous results to the current run
+            results.push({ name, run: r.run || r, error: null });
+          }
+        }
+        resumed = true;
+      } catch {
+        // If we can't read it, proceed without resume
+      }
+    }
+  }
+
+  // Enqueue each name (skip already-completed for resume)
+  let skippedCount = 0;
   const promises = names.map((entry) => {
     const candidateName = typeof entry === "string" ? entry : entry.name;
     const perNameConfig = typeof entry === "object" && entry.config ? entry.config : {};
+
+    if (completedNames.has(candidateName)) {
+      skippedCount++;
+      return Promise.resolve();
+    }
 
     return pool.run(async () => {
       try {
@@ -79,8 +134,9 @@ export async function runBatch(names, opts = {}) {
           fuzzyQueryMode: perNameConfig.fuzzyQueryMode || fuzzyQueryMode,
           variantBudget: perNameConfig.variantBudget ?? variantBudget,
           cache,
-          fetchFn,
+          fetchFn: adaptiveFetch,
           now,
+          costTracker,
         });
 
         results.push({ name: candidateName, run, error: null });
@@ -103,14 +159,29 @@ export async function runBatch(names, opts = {}) {
 
   const durationMs = Date.now() - startMs;
 
-  return {
-    results,
-    errors,
-    stats: {
-      total: names.length,
-      succeeded: results.length,
-      failed: errors.length,
-      durationMs,
-    },
+  const stats = {
+    total: names.length,
+    succeeded: results.length,
+    failed: errors.length,
+    durationMs,
   };
+
+  if (resumed) {
+    stats.resumed = true;
+    stats.skipped = skippedCount;
+  }
+
+  // Collect cost stats
+  const backoffStats = adaptiveFetch.getStats?.() || {};
+  const backoffEvents = Object.values(backoffStats.hosts || {})
+    .reduce((sum, h) => sum + h.consecutiveFailures, 0);
+
+  const costStats = {
+    totalApiCalls,
+    cachedCalls,
+    adapterBreakdown: costBreakdown,
+    backoffEvents,
+  };
+
+  return { results, errors, stats, costStats };
 }

@@ -73,6 +73,18 @@ export function renderRunMd(run) {
   lines.push(opinion.summary || "No summary available.");
   lines.push("");
 
+  // Coverage (conditional)
+  if (opinion.coverageScore !== undefined) {
+    const checkedCount = (run.checks || []).filter((c) => c.status !== "unknown" && !c.query?.isVariant).length;
+    const totalCount = (run.checks || []).filter((c) => !c.query?.isVariant).length;
+    let coverageLine = `> **Coverage:** ${opinion.coverageScore}% | ${checkedCount}/${totalCount} namespaces checked`;
+    if (opinion.uncheckedNamespaces?.length > 0) {
+      coverageLine += ` | Not checked: ${opinion.uncheckedNamespaces.join(", ")}`;
+    }
+    lines.push(coverageLine);
+    lines.push("");
+  }
+
   // Freshness Warning (conditional)
   {
     const freshness = checkFreshness(run, { maxAgeHours: 24 });
@@ -173,6 +185,50 @@ export function renderRunMd(run) {
     }
     lines.push(overallLine);
     lines.push("");
+  }
+
+  // Top Factors
+  if (opinion.topFactors?.length > 0) {
+    lines.push("### Top Factors");
+    lines.push("");
+    lines.push("| # | Factor | Statement | Weight |");
+    lines.push("|---|--------|-----------|--------|");
+    opinion.topFactors.forEach((tf, i) => {
+      lines.push(`| ${i + 1} | ${escapeForMd(tf.factor)} | ${escapeForMd(tf.statement)} | ${escapeForMd(tf.weight)} |`);
+    });
+    lines.push("");
+  }
+
+  // Risk Narrative
+  if (opinion.riskNarrative) {
+    lines.push("### Risk Narrative");
+    lines.push("");
+    lines.push(`> ${opinion.riskNarrative}`);
+    lines.push("");
+  }
+
+  // DuPont-Lite Analysis
+  if (breakdown?.dupontFactors) {
+    const df = breakdown.dupontFactors;
+    const dupontRows = [
+      ["Similarity of Marks", df.similarityOfMarks],
+      ["Channel Overlap", df.channelOverlap],
+      ["Fame Proxy", df.fameProxy],
+      ["Intent Proxy", df.intentProxy],
+    ];
+    const hasData = dupontRows.some(([, f]) => f && f.score > 0);
+    if (hasData) {
+      lines.push("### DuPont-Lite Analysis");
+      lines.push("");
+      lines.push("| Factor | Score | Rationale |");
+      lines.push("|--------|-------|-----------|");
+      for (const [label, factor] of dupontRows) {
+        if (factor) {
+          lines.push(`| ${label} | ${factor.score}/100 | ${escapeForMd(factor.rationale)} |`);
+        }
+      }
+      lines.push("");
+    }
   }
 
   // Namespace Checks
@@ -335,6 +391,32 @@ export function renderRunMd(run) {
     lines.push("");
   }
 
+  // Next Actions
+  if (opinion.nextActions?.length > 0) {
+    lines.push("## Next Actions");
+    lines.push("");
+    const urgencyIcon = { high: "\u{1F534}", medium: "\u{1F7E1}", low: "\u{1F7E2}" };
+    for (let i = 0; i < opinion.nextActions.length; i++) {
+      const a = opinion.nextActions[i];
+      const icon = urgencyIcon[a.urgency] || "\u2753";
+      lines.push(`${i + 1}. ${icon} **${a.label}** — ${a.reason}`);
+    }
+    lines.push("");
+  }
+
+  // Safer Alternatives
+  if (opinion.saferAlternatives?.length > 0) {
+    lines.push("## Safer Alternatives");
+    lines.push("");
+    lines.push("| # | Name | Strategy | Availability |");
+    lines.push("|---|------|----------|--------------|");
+    opinion.saferAlternatives.forEach((alt, i) => {
+      const avail = alt.availability?.summary || "Not checked";
+      lines.push(`| ${i + 1} | \`${escapeForMd(alt.name)}\` | ${escapeForMd(alt.strategy)} | ${escapeForMd(avail)} |`);
+    });
+    lines.push("");
+  }
+
   // Closest Conflicts
   if (opinion.closestConflicts?.length > 0) {
     lines.push("## Closest Conflicts");
@@ -378,6 +460,14 @@ export function renderRunMd(run) {
     for (const l of opinion.limitations) {
       lines.push(`- ${l}`);
     }
+    lines.push("");
+  }
+
+  // Disclaimer
+  if (opinion.disclaimer) {
+    lines.push("## Disclaimer");
+    lines.push("");
+    lines.push(`> ${opinion.disclaimer}`);
     lines.push("");
   }
 

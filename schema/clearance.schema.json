@@ -93,6 +93,10 @@
         },
         "notes": {
           "type": "string"
+        },
+        "costStats": {
+          "$ref": "#/$defs/costStats",
+          "description": "API call statistics for this run."
         }
       }
     },
@@ -297,7 +301,8 @@
             "punct-stripped",
             "phonetic",
             "misspelling",
-            "homoglyph-safe"
+            "homoglyph-safe",
+            "fuzzy"
           ]
         },
         "value": {
@@ -360,6 +365,10 @@
             "npm",
             "pypi",
             "domain",
+            "cratesio",
+            "dockerhub",
+            "huggingface_model",
+            "huggingface_space",
             "custom"
           ]
         },
@@ -385,6 +394,15 @@
             "owner": {
               "type": "string",
               "description": "Used for github_repo checks (owner/org)."
+            },
+            "isVariant": {
+              "type": "boolean",
+              "description": "Whether this check is for a fuzzy variant of the candidate."
+            },
+            "originalCandidate": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "The original candidate mark when isVariant is true."
             }
           }
         },
@@ -467,7 +485,8 @@
             "near_conflict",
             "phonetic_conflict",
             "confusable_risk",
-            "coverage_gap"
+            "coverage_gap",
+            "variant_taken"
           ]
         },
         "summary": {
@@ -500,11 +519,11 @@
         },
         "evidenceRefs": {
           "type": "array",
-          "minItems": 1,
           "items": {
             "type": "string",
             "pattern": "^ev\\.[a-z0-9][a-z0-9._-]{2,80}$"
-          }
+          },
+          "default": []
         }
       }
     },
@@ -663,6 +682,55 @@
         "scoreBreakdown": {
           "$ref": "#/$defs/scoreBreakdown",
           "description": "Explainable sub-scores and weighted overall score."
+        },
+        "topFactors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/topFactor"
+          },
+          "default": [],
+          "description": "Top 3-5 factors that drove the tier decision."
+        },
+        "riskNarrative": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 2000,
+          "description": "Deterministic 'If you do nothing...' paragraph describing likely failure mode."
+        },
+        "saferAlternatives": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/saferAlternative"
+          },
+          "default": [],
+          "description": "Deterministic alternative name suggestions."
+        },
+        "nextActions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nextAction"
+          },
+          "default": [],
+          "description": "Coaching-oriented next steps (what should I do now?)."
+        },
+        "coverageScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Percentage of requested namespaces successfully checked."
+        },
+        "uncheckedNamespaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Namespaces that could not be checked or were not included."
+        },
+        "disclaimer": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Legal disclaimer about what this report is and is not."
         }
       }
     },
@@ -705,6 +773,25 @@
               "maximum": 100
             }
           }
+        },
+        "dupontFactors": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "similarityOfMarks": {
+              "$ref": "#/$defs/dupontFactor"
+            },
+            "channelOverlap": {
+              "$ref": "#/$defs/dupontFactor"
+            },
+            "fameProxy": {
+              "$ref": "#/$defs/dupontFactor"
+            },
+            "intentProxy": {
+              "$ref": "#/$defs/dupontFactor"
+            }
+          },
+          "description": "DuPont-lite trademark analysis factors."
         }
       }
     },
@@ -750,7 +837,9 @@
             "narrow_goods",
             "expand_search_coverage",
             "consult_counsel",
-            "file_trademark"
+            "file_trademark",
+            "try_alternative",
+            "recheck_soon"
           ]
         },
         "label": {
@@ -810,6 +899,195 @@
             "pattern": "^ev\\.[a-z0-9][a-z0-9._-]{2,80}$"
           },
           "default": []
+        }
+      }
+    },
+    "topFactor": {
+      "type": "object",
+      "required": [
+        "factor",
+        "statement",
+        "weight",
+        "category"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "factor": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{2,40}$",
+          "description": "Stable factor identifier (e.g., namespace_collision)."
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 400,
+          "description": "Human-readable statement from template."
+        },
+        "weight": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "major",
+            "moderate",
+            "minor"
+          ]
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "exact_conflict",
+            "near_conflict",
+            "phonetic_conflict",
+            "confusable_risk",
+            "coverage_gap",
+            "variant_taken",
+            "all_clear"
+          ]
+        }
+      }
+    },
+    "saferAlternative": {
+      "type": "object",
+      "required": [
+        "name",
+        "strategy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "prefix",
+            "suffix",
+            "separator",
+            "abbreviation",
+            "compound"
+          ]
+        },
+        "availability": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checked": {
+              "type": "boolean"
+            },
+            "summary": {
+              "type": "string",
+              "maxLength": 400
+            }
+          }
+        }
+      }
+    },
+    "dupontFactor": {
+      "type": "object",
+      "required": [
+        "score",
+        "rationale"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "rationale": {
+          "type": "string",
+          "maxLength": 400
+        }
+      }
+    },
+    "nextAction": {
+      "type": "object",
+      "required": [
+        "type",
+        "label",
+        "reason",
+        "urgency"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "claim_now",
+            "register_domain",
+            "try_alternative",
+            "recheck_soon",
+            "consult_counsel"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 200
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 400
+        },
+        "urgency": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Optional link for the action (e.g., registration page)."
+        }
+      }
+    },
+    "costStats": {
+      "type": "object",
+      "required": [
+        "totalApiCalls",
+        "cachedCalls"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "totalApiCalls": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of API calls made."
+        },
+        "cachedCalls": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of calls served from cache."
+        },
+        "adapterBreakdown": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "calls": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cached": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "description": "Per-adapter call counts."
+        },
+        "backoffEvents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of times adaptive backoff delayed a request."
         }
       }
     },
