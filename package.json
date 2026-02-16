@@ -1,0 +1,34 @@
+{
+  "name": "clearance-opinion-engine",
+  "version": "0.1.0",
+  "description": "Deterministic name-availability and clearance-opinion engine",
+  "type": "module",
+  "main": "src/index.mjs",
+  "bin": {
+    "coe": "src/index.mjs"
+  },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test tests/unit/*.test.mjs",
+    "test:e2e": "node --test tests/e2e/*.test.mjs",
+    "test:all": "node --test tests/unit/*.test.mjs tests/e2e/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "author": "mcp-tool-shop",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcp-tool-shop-org/clearance-opinion-engine.git"
+  },
+  "keywords": [
+    "name-clearance",
+    "availability-check",
+    "opinion-engine",
+    "deterministic",
+    "npm",
+    "pypi",
+    "github"
+  ]
+}
