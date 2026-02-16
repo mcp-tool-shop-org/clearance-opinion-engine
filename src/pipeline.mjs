@@ -27,7 +27,7 @@ import { generateAlternatives, recheckAlternatives } from "./scoring/alternative
 import { redactAllEvidence } from "./lib/redact.mjs";
 import { fail } from "./lib/errors.mjs";
 
-const VERSION = "0.7.0";
+const VERSION = "0.8.0";
 
 /**
  * Wrap an adapter call with cache.

@@ -19,6 +19,9 @@ import { scoreOpinion, classifyFindings } from "../../src/scoring/opinion.mjs";
 import { writeRun, renderRunMd } from "../../src/renderers/report.mjs";
 import { renderPacketHtml, renderSummaryJson } from "../../src/renderers/packet.mjs";
 import { hashObject } from "../../src/lib/hash.mjs";
+import { publishRun, appendRunIndex } from "../../src/publish.mjs";
+import { scanForSecrets } from "../../src/lib/redact.mjs";
+import { resolveCacheDir } from "../../src/lib/config.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, "..", "fixtures");
@@ -981,5 +984,94 @@ describe("E2E: full pipeline", () => {
 
     // Full run still deterministic
     assert.deepEqual(run1, run2);
+  });
+
+  // ── Phase 8 tests ──────────────────────────────────────────────
+
+  it("nextActions for GREEN tier include url field", async () => {
+    const run = await runPipeline("p8-url-field", allAvailableFetch());
+
+    assert.equal(run.opinion.tier, "green");
+    const claimAction = run.opinion.nextActions.find((a) => a.type === "claim_now");
+    assert.ok(claimAction, "GREEN tier should have claim_now action");
+    assert.equal(typeof claimAction.url, "string", "claim_now action should have a url string");
+  });
+
+  it("nextActions url is valid absolute URL", async () => {
+    const run = await runPipeline("p8-url-valid", allAvailableFetch());
+
+    assert.equal(run.opinion.tier, "green");
+    const actionsWithUrls = run.opinion.nextActions.filter((a) => a.url);
+    assert.ok(actionsWithUrls.length > 0, "Should have at least one action with a url");
+
+    for (const action of actionsWithUrls) {
+      assert.ok(
+        action.url.startsWith("https://"),
+        `Action url should start with https://, got ${action.url}`
+      );
+    }
+  });
+
+  it("published output includes run.json", async () => {
+    const runDir = join(tmpDir, "p8-publish-src");
+    const outDir = join(tmpDir, "p8-publish-out");
+    mkdirSync(runDir, { recursive: true });
+    mkdirSync(outDir, { recursive: true });
+
+    writeFileSync(join(runDir, "run.json"), JSON.stringify({ test: true }), "utf8");
+    writeFileSync(join(runDir, "summary.json"), JSON.stringify({ tier: "green" }), "utf8");
+    writeFileSync(join(runDir, "report.html"), "<html></html>", "utf8");
+
+    const result = publishRun(runDir, outDir);
+    assert.ok(result.published.includes("run.json"), "published array should include run.json");
+    assert.ok(existsSync(join(outDir, "run.json")), "run.json should exist in output directory");
+  });
+
+  it("publishRun with indexPath appends to runs.json", async () => {
+    const indexDir = join(tmpDir, "p8-index");
+    mkdirSync(indexDir, { recursive: true });
+
+    const indexPath = join(indexDir, "runs.json");
+    const entry = {
+      slug: "test-run",
+      name: "test-run",
+      tier: "green",
+      score: 92,
+      date: NOW,
+    };
+
+    const result = appendRunIndex(indexPath, entry);
+    assert.ok(result.created, "Should report file was created");
+    assert.ok(existsSync(indexPath), "runs.json should exist");
+
+    const runs = JSON.parse(readFileSync(indexPath, "utf8"));
+    assert.ok(Array.isArray(runs), "runs.json should contain an array");
+    assert.ok(
+      runs.some((r) => r.slug === "test-run"),
+      "runs.json should contain the appended entry"
+    );
+  });
+
+  it("scanForSecrets does not trigger on clean run output", async () => {
+    const run = await runPipeline("p8-secrets-clean", allAvailableFetch());
+    const runJson = JSON.stringify(run);
+    const secrets = scanForSecrets(runJson);
+
+    assert.deepEqual(secrets, [], "Clean run output should have no secret matches");
+  });
+
+  it("resolveCacheDir falls back to env var", async () => {
+    const saved = process.env.COE_CACHE_DIR;
+    try {
+      process.env.COE_CACHE_DIR = "/tmp/coe-test-cache";
+      const result = resolveCacheDir(null);
+      assert.equal(result, "/tmp/coe-test-cache", "Should return env var when flag is null");
+    } finally {
+      if (saved === undefined) {
+        delete process.env.COE_CACHE_DIR;
+      } else {
+        process.env.COE_CACHE_DIR = saved;
+      }
+    }
   });
 });

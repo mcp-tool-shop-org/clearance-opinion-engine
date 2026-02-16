@@ -102,3 +102,36 @@ export function redactAllEvidence(evidenceArray) {
   }
   return evidenceArray;
 }
+
+/**
+ * Patterns that should NEVER appear in output files.
+ * Each pattern has a label for diagnostic output.
+ */
+const SECRET_PATTERNS = [
+  { pattern: /ghp_[A-Za-z0-9]{36}/, label: "GitHub personal access token" },
+  { pattern: /github_pat_[A-Za-z0-9_]{82}/, label: "GitHub fine-grained PAT" },
+  { pattern: /gho_[A-Za-z0-9]{36}/, label: "GitHub OAuth token" },
+  { pattern: /ghs_[A-Za-z0-9]{36}/, label: "GitHub server token" },
+  { pattern: /npm_[A-Za-z0-9]{36}/, label: "npm token" },
+  { pattern: /Bearer\s+[A-Za-z0-9._\-]{20,}/, label: "Bearer token" },
+  { pattern: /sk-[A-Za-z0-9]{32,}/, label: "OpenAI-style API key" },
+  { pattern: /AKIA[A-Z0-9]{16}/, label: "AWS access key" },
+];
+
+/**
+ * Scan a string for known secret patterns.
+ *
+ * @param {string} content
+ * @returns {string[]} Array of pattern labels that matched (empty = clean)
+ */
+export function scanForSecrets(content) {
+  if (!content || typeof content !== "string") return [];
+
+  const matches = [];
+  for (const { pattern, label } of SECRET_PATTERNS) {
+    if (pattern.test(content)) {
+      matches.push(label);
+    }
+  }
+  return matches;
+}

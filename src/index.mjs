@@ -16,7 +16,8 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { fail, warn } from "./lib/errors.mjs";
+import { fail, warn, friendlyError } from "./lib/errors.mjs";
+import { resolveCacheDir } from "./lib/config.mjs";
 import { hashFile } from "./lib/hash.mjs";
 import { createCache } from "./lib/cache.mjs";
 import { writeRun, renderRunMd } from "./renderers/report.mjs";
@@ -29,7 +30,7 @@ import { corpusInit, corpusAdd } from "./corpus/cli.mjs";
 import { publishRun } from "./publish.mjs";
 import { runDoctor } from "./doctor.mjs";
 
-const VERSION = "0.7.0";
+const VERSION = "0.8.0";
 
 // ── Channel system ──────────────────────────────────────────────
 const CORE_CHANNELS = ["github", "npm", "pypi", "domain"];
@@ -99,7 +100,7 @@ Usage:
   coe refresh <dir> [options]      Re-run stale checks on an existing run
   coe corpus init [--output path]  Create a new corpus.json template
   coe corpus add [options]         Add a mark to an existing corpus file
-  coe publish <dir> --out <dir>    Copy run artifacts for website consumption
+  coe publish <dir> --out <dir> [--index <path>]  Copy run artifacts for website consumption
   coe report <file>                Re-render an existing run.json as Markdown
   coe replay <dir>                 Verify manifest and regenerate outputs from run.json
   coe doctor                       Run environment diagnostics
@@ -116,7 +117,7 @@ Check options:
   --radar               Enable collision radar (GitHub + npm + crates.io + Docker Hub search)
   --suggest             Generate safer alternative name suggestions
   --corpus <path>       Path to a JSON corpus of known marks to compare against
-  --cache-dir <path>    Directory for caching adapter responses (opt-in)
+  --cache-dir <path>    Directory for caching (or set COE_CACHE_DIR env var)
   --max-age-hours <n>   Cache TTL in hours (default: 24, requires --cache-dir)
   --fuzzyQueryMode <m>  Fuzzy variant query mode: off|registries|all (default: registries)
   --variantBudget <n>   Max fuzzy variants to query per channel (default: 12, max: 30)
@@ -136,6 +137,7 @@ Corpus add options:
 
 Publish options:
   --out <dir>           Target output directory (required)
+  --index <path>        Append entry to a runs.json index file
 
 General:
   --help, -h            Show this help
@@ -252,7 +254,12 @@ if (command === "replay") {
   replay()
     .then(() => process.exit(0))
     .catch((err) => {
-      fail("COE.REPLAY.FATAL", err.message, { nerd: err.stack });
+      const friendly = friendlyError(err);
+      if (friendly) {
+        fail(friendly.code, friendly.headline, { fix: friendly.fix });
+      } else {
+        fail("COE.REPLAY.FATAL", err.message, { nerd: err.stack });
+      }
     });
 
   // Prevent falling through to next command
@@ -274,7 +281,7 @@ if (command === "replay") {
   const riskTolerance = getFlag("--risk") || "conservative";
   const useRadar = args.includes("--radar");
   const corpusPath = getFlag("--corpus");
-  const cacheDir = getFlag("--cache-dir");
+  const cacheDir = resolveCacheDir(getFlag("--cache-dir"));
   const maxAgeHours = parseInt(getFlag("--max-age-hours") || "24", 10);
   const fuzzyQueryMode = getFlag("--fuzzyQueryMode") || "registries";
   const variantBudget = Math.min(parseInt(getFlag("--variantBudget") || "12", 10), 30);
@@ -346,7 +353,12 @@ if (command === "replay") {
   }
 
   batchMain().catch((err) => {
-    fail("COE.BATCH.FATAL", err.message, { nerd: err.stack });
+    const friendly = friendlyError(err);
+    if (friendly) {
+      fail(friendly.code, friendly.headline, { fix: friendly.fix });
+    } else {
+      fail("COE.BATCH.FATAL", err.message, { nerd: err.stack });
+    }
   });
 
 // ── Command: refresh ────────────────────────────────────────────
@@ -398,7 +410,12 @@ if (command === "replay") {
   }
 
   refreshMain().catch((err) => {
-    fail("COE.REFRESH.FATAL", err.message, { nerd: err.stack });
+    const friendly = friendlyError(err);
+    if (friendly) {
+      fail(friendly.code, friendly.headline, { fix: friendly.fix });
+    } else {
+      fail("COE.REFRESH.FATAL", err.message, { nerd: err.stack });
+    }
   });
 
 // ── Command: corpus ─────────────────────────────────────────────
@@ -465,14 +482,22 @@ if (command === "replay") {
     });
   }
 
+  const indexPath = getFlag("--index");
+
   try {
-    const result = publishRun(resolve(runDir), resolve(outDir));
+    const result = publishRun(resolve(runDir), resolve(outDir), {
+      indexPath: indexPath ? resolve(indexPath) : null,
+    });
     console.log(`\u{1F4E6} Published ${result.published.length} files to ${resolve(outDir)}`);
     for (const f of result.published) {
       console.log(`  \u2713 ${f}`);
     }
     if (result.indexGenerated) {
       console.log(`  \u2713 index.html (multi-run listing)`);
+    }
+    if (result.indexResult) {
+      const verb = result.indexResult.created ? "Created" : "Updated";
+      console.log(`  \u2713 ${verb} index: ${resolve(indexPath)} (${result.indexResult.entries} entries)`);
     }
   } catch (err) {
     fail(err.code || "COE.PUBLISH.FATAL", err.message);
@@ -497,7 +522,7 @@ if (command === "replay") {
   const useRadar = args.includes("--radar");
   const useSuggest = args.includes("--suggest");
   const corpusPath = getFlag("--corpus");
-  const cacheDir = getFlag("--cache-dir");
+  const cacheDir = resolveCacheDir(getFlag("--cache-dir"));
   const maxAgeHours = parseInt(getFlag("--max-age-hours") || "24", 10);
   const fuzzyQueryMode = getFlag("--fuzzyQueryMode") || "registries";
   const variantBudget = Math.min(parseInt(getFlag("--variantBudget") || "12", 10), 30);
@@ -548,7 +573,12 @@ if (command === "replay") {
   }
 
   main().catch((err) => {
-    fail("COE.MAIN.FATAL", err.message, { nerd: err.stack });
+    const friendly = friendlyError(err);
+    if (friendly) {
+      fail(friendly.code, friendly.headline, { fix: friendly.fix });
+    } else {
+      fail("COE.MAIN.FATAL", err.message, { nerd: err.stack });
+    }
   });
 // ── Command: doctor ──────────────────────────────────────────────
 } else if (command === "doctor") {
@@ -571,7 +601,12 @@ if (command === "replay") {
   }
 
   doctorMain().catch((err) => {
-    fail("COE.DOCTOR.FATAL", err.message, { nerd: err.stack });
+    const friendly = friendlyError(err);
+    if (friendly) {
+      fail(friendly.code, friendly.headline, { fix: friendly.fix });
+    } else {
+      fail("COE.DOCTOR.FATAL", err.message, { nerd: err.stack });
+    }
   });
 } else {
   fail("COE.INIT.NO_ARGS", `Unknown command: ${command}`, {

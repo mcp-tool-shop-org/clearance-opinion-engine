@@ -310,12 +310,12 @@ const ACTION_TEMPLATES = {
  * Distinct from recommendedActions (which are reservation links).
  *
  * @param {{ checks: object[], findings: object[] }} data
- * @param {{ tier: string, candidateName: string, saferAlternatives?: object[] }} context
- * @returns {Array<{ type: string, label: string, reason: string, urgency: string }>}
+ * @param {{ tier: string, candidateName: string, saferAlternatives?: object[], claimLinks?: string[], domainLinks?: string[] }} context
+ * @returns {Array<{ type: string, label: string, reason: string, urgency: string, url?: string }>}
  */
 export function buildNextActions(data, context) {
   const { checks = [] } = data;
-  const { tier, candidateName, saferAlternatives = [] } = context;
+  const { tier, candidateName, saferAlternatives = [], claimLinks = [], domainLinks = [] } = context;
   const actions = [];
 
   const available = checks.filter((c) => c.status === "available" && !c.query?.isVariant);
@@ -324,25 +324,33 @@ export function buildNextActions(data, context) {
   if (tier === "green") {
     // Claim now
     const availNamespaces = [...new Set(available.map((c) => c.namespace))].join(", ");
-    actions.push({
+    const claimAction = {
       type: "claim_now",
       ...buildAction(ACTION_TEMPLATES.green.claim_now, {
         name: candidateName,
         availableCount: available.length,
         availableNamespaces: availNamespaces || "available namespaces",
       }),
-    });
+    };
+    if (claimLinks.length > 0) {
+      claimAction.url = claimLinks[0];
+    }
+    actions.push(claimAction);
 
     // Register domain (only if domain channel was checked and domains available)
     const availDomains = available.filter((c) => c.namespace === "domain");
     if (availDomains.length > 0) {
       const domainList = availDomains.map((c) => c.query?.value || "").filter(Boolean).join(", ");
-      actions.push({
+      const domainAction = {
         type: "register_domain",
         ...buildAction(ACTION_TEMPLATES.green.register_domain, {
           availableDomains: domainList || "available domains",
         }),
-      });
+      };
+      if (domainLinks.length > 0) {
+        domainAction.url = domainLinks[0];
+      }
+      actions.push(domainAction);
     }
   } else if (tier === "yellow") {
     // Recheck
@@ -718,8 +726,8 @@ export function scoreOpinion(data, opts = {}) {
   // Generate risk narrative
   const riskNarrative = generateRiskNarrative({ tier, topFactors, candidateName });
 
-  // Build next actions (coaching-oriented)
-  const nextActions = buildNextActions(data, { tier, candidateName });
+  // Build next actions (coaching-oriented, with URLs from reservation links)
+  const nextActions = buildNextActions(data, { tier, candidateName, claimLinks, domainLinks });
 
   // Compute coverage score + disclaimer
   const intakeChannels = data.intake?.channels

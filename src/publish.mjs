@@ -1,13 +1,15 @@
 /**
  * Publish command.
  *
- * Copies run artifacts (report.html, summary.json, manifest.json)
+ * Copies run artifacts (report.html, summary.json, manifest.json, run.json)
  * to a target directory for website consumption.
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
-import { join, basename, resolve } from "node:path";
+import { join, basename, resolve, dirname } from "node:path";
 import { escapeHtml, escapeAttr } from "./renderers/html-escape.mjs";
+import { scanForSecrets } from "./lib/redact.mjs";
+import { warn } from "./lib/errors.mjs";
 
 function publishError(code, message) {
   const err = new Error(message);
@@ -16,13 +18,50 @@ function publishError(code, message) {
 }
 
 /**
+ * Append a run entry to a runs.json index file.
+ *
+ * @param {string} indexPath - Absolute path to runs.json
+ * @param {{ slug: string, name: string, tier: string, score: number|null, date: string }} entry
+ * @returns {{ entries: number, created: boolean }}
+ */
+export function appendRunIndex(indexPath, entry) {
+  let runs = [];
+  let created = false;
+
+  if (existsSync(indexPath)) {
+    try {
+      runs = JSON.parse(readFileSync(indexPath, "utf8"));
+      if (!Array.isArray(runs)) runs = [];
+    } catch {
+      runs = [];
+    }
+  } else {
+    created = true;
+    // Ensure parent directory exists
+    mkdirSync(dirname(indexPath), { recursive: true });
+  }
+
+  // Deduplicate by slug: replace existing entry if same slug
+  runs = runs.filter((r) => r.slug !== entry.slug);
+  runs.push(entry);
+
+  // Sort by date descending
+  runs.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  writeFileSync(indexPath, JSON.stringify(runs, null, 2) + "\n", "utf8");
+  return { entries: runs.length, created };
+}
+
+/**
  * Publish a run directory to a target output directory.
  *
  * @param {string} runDir - Source run directory (contains report.html, summary.json, etc.)
  * @param {string} outputDir - Target output directory
- * @returns {{ published: string[], indexGenerated: boolean }}
+ * @param {object} [opts]
+ * @param {string} [opts.indexPath] - Path to runs.json index file to append to
+ * @returns {{ published: string[], indexGenerated: boolean, indexResult: object|null }}
  */
-export function publishRun(runDir, outputDir) {
+export function publishRun(runDir, outputDir, opts = {}) {
   const absRunDir = resolve(runDir);
   const absOutputDir = resolve(outputDir);
 
@@ -32,7 +71,7 @@ export function publishRun(runDir, outputDir) {
 
   mkdirSync(absOutputDir, { recursive: true });
 
-  const filesToCopy = ["report.html", "summary.json", "manifest.json"];
+  const filesToCopy = ["report.html", "summary.json", "manifest.json", "run.json"];
   const published = [];
 
   for (const file of filesToCopy) {
@@ -65,11 +104,17 @@ export function publishRun(runDir, outputDir) {
         generatedAt: summary.generatedAt || new Date().toISOString(),
         reportUrl: `${slug}/report.html`,
       };
-      writeFileSync(
-        join(absOutputDir, "clearance-index.json"),
-        JSON.stringify(clearanceIndex, null, 2) + "\n",
-        "utf8"
-      );
+      const indexContent = JSON.stringify(clearanceIndex, null, 2) + "\n";
+
+      // Secret scan before writing
+      const secrets = scanForSecrets(indexContent);
+      if (secrets.length > 0) {
+        warn("COE.PUBLISH.SECRET_DETECTED", "Possible secret detected in clearance-index.json", {
+          fix: "Check evidence redaction. Matched patterns: " + secrets.join(", "),
+        });
+      }
+
+      writeFileSync(join(absOutputDir, "clearance-index.json"), indexContent, "utf8");
       published.push("clearance-index.json");
     } catch {
       // If summary can't be parsed, skip clearance-index generation
@@ -107,7 +152,27 @@ export function publishRun(runDir, outputDir) {
     // If we can't read the parent directory, skip index generation
   }
 
-  return { published, indexGenerated };
+  // Append to runs index if --index path provided
+  let indexResult = null;
+  if (opts.indexPath) {
+    if (existsSync(summaryPath)) {
+      try {
+        const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
+        const slug = basename(absOutputDir);
+        indexResult = appendRunIndex(resolve(opts.indexPath), {
+          slug,
+          name: summary.candidates?.[0] || slug,
+          tier: summary.tier || "unknown",
+          score: summary.overallScore ?? null,
+          date: summary.generatedAt || new Date().toISOString(),
+        });
+      } catch {
+        // Non-fatal: index append failure should not break publish
+      }
+    }
+  }
+
+  return { published, indexGenerated, indexResult };
 }
 
 /**

@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync, readFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { publishRun } from "../../src/publish.mjs";
+import { publishRun, appendRunIndex } from "../../src/publish.mjs";
 
 const TMP_DIR = join(import.meta.dirname, "..", ".tmp-publish");
 
@@ -108,7 +108,7 @@ describe("publishRun", () => {
     try {
       const runDir = join(TMP_DIR, "empty-run");
       mkdirSync(runDir, { recursive: true });
-      writeFileSync(join(runDir, "run.json"), "{}", "utf8"); // only run.json, no report.html
+      writeFileSync(join(runDir, "notes.txt"), "not a publishable file", "utf8");
       assert.throws(
         () => publishRun(runDir, join(TMP_DIR, "out")),
         /no publishable/i
@@ -132,6 +132,95 @@ describe("publishRun", () => {
       assert.equal(idx.tier, "green");
       assert.equal(idx.slug, "my-run");
       assert.ok(idx.reportUrl.includes("report.html"));
+    } finally { cleanup(); }
+  });
+
+  it("appendRunIndex creates new runs.json when file does not exist", () => {
+    setup();
+    try {
+      const indexPath = join(TMP_DIR, "new-runs.json");
+      const entry = { slug: "my-tool", name: "my-tool", tier: "green", score: 90, date: "2026-02-15T12:00:00Z" };
+
+      const result = appendRunIndex(indexPath, entry);
+      assert.ok(existsSync(indexPath));
+      assert.equal(result.entries, 1);
+      assert.equal(result.created, true);
+
+      const runs = JSON.parse(readFileSync(indexPath, "utf8"));
+      assert.equal(runs.length, 1);
+      assert.equal(runs[0].slug, "my-tool");
+    } finally { cleanup(); }
+  });
+
+  it("appendRunIndex appends to existing runs.json", () => {
+    setup();
+    try {
+      const indexPath = join(TMP_DIR, "existing-runs.json");
+      const entry1 = { slug: "tool-a", name: "tool-a", tier: "green", score: 85, date: "2026-02-14T12:00:00Z" };
+      const entry2 = { slug: "tool-b", name: "tool-b", tier: "yellow", score: 60, date: "2026-02-15T12:00:00Z" };
+
+      // Pre-write a 1-entry file
+      writeFileSync(indexPath, JSON.stringify([entry1]), "utf8");
+
+      const result = appendRunIndex(indexPath, entry2);
+      assert.equal(result.entries, 2);
+
+      const runs = JSON.parse(readFileSync(indexPath, "utf8"));
+      assert.equal(runs.length, 2);
+      // Sorted by date desc — entry2 (Feb 15) should come first
+      assert.equal(runs[0].slug, "tool-b");
+      assert.equal(runs[1].slug, "tool-a");
+    } finally { cleanup(); }
+  });
+
+  it("appendRunIndex deduplicates by slug", () => {
+    setup();
+    try {
+      const indexPath = join(TMP_DIR, "dedup-runs.json");
+      const entry1 = { slug: "my-tool", name: "my-tool", tier: "yellow", score: 50, date: "2026-02-14T12:00:00Z" };
+      const entry2 = { slug: "my-tool", name: "my-tool", tier: "green", score: 90, date: "2026-02-15T12:00:00Z" };
+
+      appendRunIndex(indexPath, entry1);
+      const result = appendRunIndex(indexPath, entry2);
+
+      assert.equal(result.entries, 1);
+      const runs = JSON.parse(readFileSync(indexPath, "utf8"));
+      assert.equal(runs.length, 1);
+      assert.equal(runs[0].tier, "green"); // latest entry wins
+    } finally { cleanup(); }
+  });
+
+  it("appendRunIndex handles corrupt JSON gracefully", () => {
+    setup();
+    try {
+      const indexPath = join(TMP_DIR, "corrupt-runs.json");
+      writeFileSync(indexPath, "{{not valid json!!", "utf8");
+
+      const entry = { slug: "fixed-tool", name: "fixed-tool", tier: "green", score: 95, date: "2026-02-15T12:00:00Z" };
+      const result = appendRunIndex(indexPath, entry);
+
+      assert.equal(result.entries, 1);
+      const runs = JSON.parse(readFileSync(indexPath, "utf8"));
+      assert.equal(runs.length, 1);
+      assert.equal(runs[0].slug, "fixed-tool");
+    } finally { cleanup(); }
+  });
+
+  it("publishRun with indexPath populates runs.json", () => {
+    setup();
+    try {
+      const runDir = join(TMP_DIR, "source");
+      const outDir = join(TMP_DIR, "out", "my-run");
+      const indexPath = join(TMP_DIR, "runs.json");
+      createFakeRun(runDir);
+
+      const result = publishRun(runDir, outDir, { indexPath });
+      assert.ok(result.indexResult !== null);
+      assert.ok(existsSync(indexPath));
+
+      const runs = JSON.parse(readFileSync(indexPath, "utf8"));
+      assert.ok(runs.length >= 1);
+      assert.equal(runs[0].slug, "my-run");
     } finally { cleanup(); }
   });
 });

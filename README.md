@@ -252,6 +252,9 @@ node src/index.mjs corpus add --name "Vue" --class 9 --registrant "Evan You" --c
 
 # Export run artifacts for website consumption
 node src/index.mjs publish reports/2026-02-15 --out dist/clearance/run1
+
+# Publish and update a shared runs index
+node src/index.mjs publish reports/2026-02-15 --out dist/clearance/run1 --index dist/clearance/runs.json
 ```
 
 ### Batch mode
@@ -305,7 +308,7 @@ No config file required. All options are CLI flags:
 | `--radar` | _(off)_ | Enable collision radar (GitHub + npm + crates.io + Docker Hub search for similar names) |
 | `--suggest` | _(off)_ | Generate safer alternative name suggestions in the opinion |
 | `--corpus` | _(none)_ | Path to JSON corpus of known marks to compare against |
-| `--cache-dir` | _(off)_ | Directory for caching adapter responses |
+| `--cache-dir` | _(off)_ | Directory for caching adapter responses (or set `COE_CACHE_DIR`) |
 | `--max-age-hours` | `24` | Cache TTL in hours (requires `--cache-dir`) |
 | `--dockerNamespace` | _(none)_ | Docker Hub namespace (user/org) — required when `dockerhub` channel is enabled |
 | `--hfOwner` | _(none)_ | Hugging Face owner (user/org) — required when `huggingface` channel is enabled |
@@ -319,6 +322,7 @@ No config file required. All options are CLI flags:
 | Variable | Effect |
 |----------|--------|
 | `GITHUB_TOKEN` | Raises GitHub API rate limit from 60/hr to 5,000/hr |
+| `COE_CACHE_DIR` | Default cache directory (CLI `--cache-dir` flag takes precedence) |
 
 ---
 
@@ -378,6 +382,12 @@ All tests use fixture-injected adapters (zero network calls). Golden snapshots e
 | `COE.REFRESH.NO_RUN` | No `run.json` in refresh directory |
 | `COE.PUBLISH.NOT_FOUND` | Run directory not found for publish |
 | `COE.PUBLISH.NO_FILES` | No publishable files in directory |
+| `COE.PUBLISH.SECRET_DETECTED` | Possible secret detected in publish output (warning) |
+| `COE.NET.DNS_FAIL` | DNS lookup failed — check network connection |
+| `COE.NET.CONN_REFUSED` | Connection refused by remote server |
+| `COE.NET.TIMEOUT` | Request timed out |
+| `COE.NET.RATE_LIMITED` | Rate limited — wait and retry |
+| `COE.FS.PERMISSION` | Permission denied writing to disk |
 | `COE.CORPUS.EXISTS` | Corpus file already exists (during init) |
 | `COE.CORPUS.EMPTY_NAME` | Mark name is required but empty |
 
@@ -394,6 +404,7 @@ See [docs/RUNBOOK.md](docs/RUNBOOK.md) for the complete error reference and trou
 - **No secrets in output**: API tokens never appear in reports
 - **XSS-safe**: all user strings are HTML-escaped in the attorney packet
 - **Evidence redaction**: tokens, API keys, and Authorization headers are stripped before writing
+- **Secret scan**: `coe publish` scans output for leaked tokens before writing
 
 ---
 

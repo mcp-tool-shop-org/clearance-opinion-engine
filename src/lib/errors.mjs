@@ -63,3 +63,61 @@ export function makeError(code, message, context) {
   if (context) err.context = context;
   return err;
 }
+
+/**
+ * Map common error patterns to user-friendly messages.
+ *
+ * @param {Error} err
+ * @returns {{ code: string, headline: string, fix: string } | null}
+ */
+export function friendlyError(err) {
+  const msg = err?.message || "";
+  const code = err?.code || err?.cause?.code || "";
+
+  // DNS failure
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN" || msg.includes("getaddrinfo")) {
+    return {
+      code: "COE.NET.DNS_FAIL",
+      headline: "DNS lookup failed — are you connected to the internet?",
+      fix: "Check your network connection and try again.",
+    };
+  }
+
+  // Connection refused
+  if (code === "ECONNREFUSED") {
+    return {
+      code: "COE.NET.CONN_REFUSED",
+      headline: "Connection refused by the remote server.",
+      fix: "The service may be down. Try again later.",
+    };
+  }
+
+  // Timeout
+  if (code === "ETIMEDOUT" || code === "ESOCKETTIMEDOUT" || msg.includes("timeout")) {
+    return {
+      code: "COE.NET.TIMEOUT",
+      headline: "Request timed out.",
+      fix: "The service may be slow. Try again later or use --cache-dir to cache results.",
+    };
+  }
+
+  // Rate limited
+  if (msg.includes("429") || msg.includes("rate limit")) {
+    return {
+      code: "COE.NET.RATE_LIMITED",
+      headline: "Rate limited by the remote service.",
+      fix: "Wait a few minutes and try again, or use --cache-dir to avoid repeated requests.",
+    };
+  }
+
+  // Permission denied
+  if (code === "EACCES" || code === "EPERM") {
+    return {
+      code: "COE.FS.PERMISSION",
+      headline: "Permission denied writing to disk.",
+      fix: "Check file permissions on the output directory.",
+    };
+  }
+
+  return null;
+}

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { redactUrl, redactEvidence, redactAllEvidence, MAX_EVIDENCE_BYTES } from "../../src/lib/redact.mjs";
+import { redactUrl, redactEvidence, redactAllEvidence, MAX_EVIDENCE_BYTES, scanForSecrets } from "../../src/lib/redact.mjs";
 
 describe("redactUrl", () => {
   it("strips token query param", () => {
@@ -93,5 +93,31 @@ describe("redactAllEvidence", () => {
     assert.equal(result.length, 2);
     assert.ok(!result[0].source.url.includes("secret1"));
     assert.ok(!result[1].source.url.includes("secret2"));
+  });
+});
+
+describe("scanForSecrets", () => {
+  it("detects GitHub PAT", () => {
+    const input = "token: ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345678a";
+    const matches = scanForSecrets(input);
+    assert.ok(matches.includes("GitHub personal access token"));
+  });
+
+  it("detects npm token", () => {
+    const input = "auth: npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345678a";
+    const matches = scanForSecrets(input);
+    assert.ok(matches.includes("npm token"));
+  });
+
+  it("detects Bearer token", () => {
+    const input = 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234';
+    const matches = scanForSecrets(input);
+    assert.ok(matches.includes("Bearer token"));
+  });
+
+  it("returns empty for clean content", () => {
+    const input = "This is a normal report about package availability. No secrets here.";
+    const matches = scanForSecrets(input);
+    assert.equal(matches.length, 0);
   });
 });

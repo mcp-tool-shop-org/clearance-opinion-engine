@@ -335,7 +335,8 @@
         "type": "claim_now",
         "label": "Claim 'golden-test' now",
         "reason": "All 3 namespace(s) are available — claim on github_repo, npm, pypi before someone else does.",
-        "urgency": "high"
+        "urgency": "high",
+        "url": "https://github.com/new"
       }
     ],
     "coverageScore": 100,

@@ -96,6 +96,7 @@ Operational reference for clearance-opinion-engine. All error codes, troubleshoo
 |------|---------|-----|
 | `COE.PUBLISH.NOT_FOUND` | Run directory not found | Check the run directory path |
 | `COE.PUBLISH.NO_FILES` | No publishable files in directory | Ensure directory contains `report.html` and/or `summary.json` |
+| `COE.PUBLISH.SECRET_DETECTED` | Possible secret in clearance-index.json | Check evidence redaction; patterns: ghp_, npm_, Bearer, sk-, AKIA |
 
 ### COE.RENDER.* — Output Errors
 
@@ -165,6 +166,7 @@ The disk cache is opt-in via `--cache-dir`. Common issues:
 2. **Corrupted entries**: The cache silently ignores corrupted JSON (returns null, refetches)
 3. **Disk full**: Cache writes are atomic (temp file + rename), so partial writes don't corrupt
 4. **Cache location**: Use an absolute path for `--cache-dir` to avoid confusion with working directories
+5. **Environment variable**: Set `COE_CACHE_DIR` for persistent config (CLI `--cache-dir` flag takes precedence)
 
 To clear the cache:
 ```bash
@@ -196,6 +198,32 @@ Evidence objects are automatically sanitized before writing to disk:
 - Evidence notes exceeding 50KB are truncated with `[TRUNCATED]` marker
 
 This is applied automatically by the pipeline. No user action required.
+
+### Friendly Error Messages
+
+The CLI maps common system errors to user-friendly messages:
+
+| Code | Trigger | Message |
+|------|---------|---------|
+| `COE.NET.DNS_FAIL` | `ENOTFOUND` / `EAI_AGAIN` | DNS lookup failed — are you online? |
+| `COE.NET.CONN_REFUSED` | `ECONNREFUSED` | Connection refused by remote server |
+| `COE.NET.TIMEOUT` | `ETIMEDOUT` | Request timed out |
+| `COE.NET.RATE_LIMITED` | HTTP 429 / "rate limit" | Rate limited — wait and retry |
+| `COE.FS.PERMISSION` | `EACCES` / `EPERM` | Permission denied writing to disk |
+
+Unrecognized errors fall through to `COE.MAIN.FATAL` with the raw error message.
+
+### Secret Scanning
+
+`coe publish` scans the generated `clearance-index.json` for leaked secrets before writing. Detected patterns:
+
+- `ghp_` / `github_pat_` / `gho_` / `ghs_` — GitHub tokens
+- `npm_` — npm tokens
+- `Bearer` — Authorization headers
+- `sk-` — OpenAI-style API keys
+- `AKIA` — AWS access key IDs
+
+Detection emits `COE.PUBLISH.SECRET_DETECTED` as a warning (non-fatal). The most likely cause is un-redacted evidence. Check the evidence redaction pipeline if triggered.
 
 ### Batch Mode
 

@@ -5,6 +5,7 @@ import {
   classifyFindings,
   extractTopFactors,
   generateRiskNarrative,
+  buildNextActions,
 } from "../../src/scoring/opinion.mjs";
 
 const AVAILABLE_CHECK = {
@@ -375,5 +376,80 @@ describe("scoreOpinion (Phase 6 additions)", () => {
     });
     assert.ok(typeof result.riskNarrative === "string", "riskNarrative must be a string");
     assert.ok(result.riskNarrative.length > 0, "riskNarrative must not be empty");
+  });
+});
+
+// ── Phase 8: buildNextActions ─────────────────────────────────────
+
+describe("buildNextActions", () => {
+  it("includes url for claim_now when claimLinks provided", () => {
+    const actions = buildNextActions(
+      { checks: [AVAILABLE_CHECK] },
+      {
+        tier: "green",
+        candidateName: "my-tool",
+        claimLinks: ["https://npmjs.com/package/test"],
+      }
+    );
+    const claimAction = actions.find((a) => a.type === "claim_now");
+    assert.ok(claimAction, "claim_now action must exist");
+    assert.equal(claimAction.url, "https://npmjs.com/package/test");
+  });
+
+  it("includes url for register_domain when domainLinks provided", () => {
+    const domainCheck = {
+      ...AVAILABLE_CHECK,
+      id: "chk.domain.my-tool.com",
+      namespace: "domain",
+      query: { candidateMark: "my-tool", value: "my-tool.com" },
+    };
+    const actions = buildNextActions(
+      { checks: [AVAILABLE_CHECK, domainCheck] },
+      {
+        tier: "green",
+        candidateName: "my-tool",
+        domainLinks: ["https://namecheap.com/domains/registration/results/?domain=my-tool.com"],
+      }
+    );
+    const domainAction = actions.find((a) => a.type === "register_domain");
+    assert.ok(domainAction, "register_domain action must exist");
+    assert.equal(domainAction.url, "https://namecheap.com/domains/registration/results/?domain=my-tool.com");
+  });
+
+  it("omits url when no links available", () => {
+    const actions = buildNextActions(
+      { checks: [AVAILABLE_CHECK] },
+      {
+        tier: "green",
+        candidateName: "my-tool",
+      }
+    );
+    const claimAction = actions.find((a) => a.type === "claim_now");
+    assert.ok(claimAction, "claim_now action must exist");
+    assert.equal(claimAction.url, undefined, "url must not be set when no claimLinks provided");
+  });
+
+  it("scoreOpinion passes claimLinks to nextActions", () => {
+    const npmCheck = {
+      ...AVAILABLE_CHECK,
+      id: "chk.npm.my-tool",
+      namespace: "npm",
+      query: { candidateMark: "my-tool", value: "my-tool" },
+    };
+    const githubCheck = {
+      ...AVAILABLE_CHECK,
+      id: "chk.github-org.my-tool",
+      namespace: "github_org",
+      query: { candidateMark: "my-tool", value: "my-tool" },
+    };
+    const result = scoreOpinion({
+      checks: [npmCheck, githubCheck],
+      findings: [],
+      variants: VARIANTS_CLEAN,
+    });
+    assert.ok(result.nextActions.length > 0, "nextActions must have entries");
+    const claimAction = result.nextActions.find((a) => a.type === "claim_now");
+    assert.ok(claimAction, "claim_now action must exist");
+    assert.ok(claimAction.url, "claim_now action must have url from reservation links");
   });
 });

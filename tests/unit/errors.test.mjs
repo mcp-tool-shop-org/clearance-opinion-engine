@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { makeError } from "../../src/lib/errors.mjs";
+import { makeError, friendlyError } from "../../src/lib/errors.mjs";
 
 describe("errors", () => {
   it("makeError creates a structured error with code and message", () => {
@@ -38,5 +38,37 @@ describe("errors", () => {
   it("makeError without context omits context key", () => {
     const err = makeError("COE.INIT.NO_ARGS", "test");
     assert.ok(!("context" in err));
+  });
+});
+
+describe("friendlyError", () => {
+  it("maps ENOTFOUND to DNS_FAIL", () => {
+    const result = friendlyError({ code: "ENOTFOUND" });
+    assert.equal(result.code, "COE.NET.DNS_FAIL");
+  });
+
+  it("maps ECONNREFUSED", () => {
+    const result = friendlyError({ code: "ECONNREFUSED" });
+    assert.equal(result.code, "COE.NET.CONN_REFUSED");
+  });
+
+  it("maps ETIMEDOUT", () => {
+    const result = friendlyError({ code: "ETIMEDOUT" });
+    assert.equal(result.code, "COE.NET.TIMEOUT");
+  });
+
+  it("maps 429 message", () => {
+    const result = friendlyError({ message: "HTTP 429 Too Many Requests" });
+    assert.equal(result.code, "COE.NET.RATE_LIMITED");
+  });
+
+  it("maps EACCES", () => {
+    const result = friendlyError({ code: "EACCES" });
+    assert.equal(result.code, "COE.FS.PERMISSION");
+  });
+
+  it("returns null for unknown", () => {
+    const result = friendlyError({ message: "something else" });
+    assert.equal(result, null);
   });
 });

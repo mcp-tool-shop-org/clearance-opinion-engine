@@ -108,7 +108,7 @@ A measure of how recent the evidence in a run is. Checks whose `observedAt` time
 The `coe refresh <dir>` command. Reads an existing `run.json`, identifies stale checks, re-runs only the stale adapter calls, and produces a new run object with updated evidence. The original run is never modified.
 
 ## publish
-The `coe publish <dir> --out <dir>` command. Copies run artifacts (`report.html`, `summary.json`, `manifest.json`) to a target directory for website consumption. Generates an `index.html` listing when multiple runs are published.
+The `coe publish <dir> --out <dir>` command. Copies run artifacts (`report.html`, `summary.json`, `manifest.json`, `run.json`) to a target directory for website consumption. Generates an `index.html` listing when multiple runs are published. Use `--index <path>` to append a run entry to a shared `runs.json` index.
 
 ## concurrency pool
 A Promise-based semaphore that limits parallel async tasks. Used by batch mode to control how many names are checked simultaneously. See `createPool()` in `src/lib/concurrency.mjs`.
@@ -171,3 +171,15 @@ A per-host fetch throttling mechanism. Tracks consecutive failures and progressi
 
 ## batch resume
 The `--resume <dir>` flag for `coe batch`. Reads previous batch results from the specified directory and skips names that were already completed. Handles interrupted batches without redundant API calls.
+
+## appendRunIndex
+The function `appendRunIndex(indexPath, entry)` in `src/publish.mjs`. Reads or creates a `runs.json` file, deduplicates by slug, appends the new entry, and sorts by date descending. Called by `publishRun()` when `--index` is provided.
+
+## friendlyError
+The function `friendlyError(err)` in `src/lib/errors.mjs`. Maps common system errors (ENOTFOUND, ECONNREFUSED, ETIMEDOUT, 429, EACCES) to user-friendly `{ code, headline, fix }` objects. Returns `null` for unrecognized errors.
+
+## scanForSecrets
+The function `scanForSecrets(content)` in `src/lib/redact.mjs`. Scans a string for patterns that indicate leaked secrets (GitHub PATs, npm tokens, Bearer headers, AWS keys). Returns an array of matched pattern descriptions. Used by `publishRun()` as a defense-in-depth check.
+
+## resolveCacheDir
+The function `resolveCacheDir(flagValue)` in `src/lib/config.mjs`. Returns the cache directory from: (1) CLI `--cache-dir` flag, (2) `COE_CACHE_DIR` environment variable, or (3) `null`. Centralizes cache directory resolution.
