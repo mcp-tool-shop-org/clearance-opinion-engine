@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.md">English</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
+  <a href="README.md">English</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
 </p>
 
 <p align="center">
@@ -338,16 +338,16 @@ node src/index.mjs replay reports/2026-02-15
 | フラグ | デフォルト値 | 説明 |
 | ------ | --------- | ------------- |
 | `--channels` | `github,npm,pypi,domain` | チェックするチャンネル。明示的なリスト、グループ名 (`core`, `dev`, `ai`, `all`)、または追加 (`+cratesio,+dockerhub`) を指定できます。 |
-| `--org` | _(指定なし)_ | 組織名が利用可能かどうかをチェックするGitHub組織 |
+| `--org` | _(なし)_ | 組織名が利用可能かどうかをチェックするGitHub組織 |
 | `--risk` | `conservative` | リスク許容度: `conservative` (保守的), `balanced` (バランス), `aggressive` (積極的) |
 | `--output` | `reports/` | 実行アーティファクトの出力ディレクトリ |
 | `--radar` | _(無効)_ | 類似名前検出機能を有効にする (GitHub + npm + crates.io + Docker Hub で類似の名前を検索) |
 | `--suggest` | _(無効)_ | 意見の中で、より安全な代替の名前の提案を生成する |
-| `--corpus` | _(指定なし)_ | 比較対象の既知の商標のJSONコーパスへのパス |
+| `--corpus` | _(なし)_ | 比較対象の既知の商標のJSONコーパスへのパス |
 | `--cache-dir` | _(無効)_ | アダプターの応答をキャッシュするディレクトリ (または `COE_CACHE_DIR` を設定) |
 | `--max-age-hours` | `24` | キャッシュの有効期間 (時間) ( `--cache-dir` が必要) |
-| `--dockerNamespace` | _(指定なし)_ | Docker Hubのネームスペース (ユーザー/組織) — `dockerhub` チャンネルを有効にする場合に必要 |
-| `--hfOwner` | _(指定なし)_ | Hugging Faceの所有者（ユーザー/組織） — `huggingface`チャンネルを有効にすると必須 |
+| `--dockerNamespace` | _(なし)_ | Docker Hubのネームスペース (ユーザー/組織) — `dockerhub` チャンネルを有効にする場合に必要 |
+| `--hfOwner` | _(なし)_ | Hugging Faceの所有者（ユーザー/組織） — `huggingface`チャンネルを有効にすると必須 |
 | `--fuzzyQueryMode` | `registries` | あいまい検索モード: `off`、`registries`、`all` |
 | `--concurrency` | `4` | バッチモードでの同時チェックの最大数 |
 | `--resume` | _(なし)_ | 以前の出力ディレクトリからバッチを再開します（完了した名前はスキップされます）。 |
