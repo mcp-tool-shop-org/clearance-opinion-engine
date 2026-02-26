@@ -470,7 +470,7 @@ describe("E2E: full pipeline", () => {
 
   it("golden snapshot: markdown matches expected output", async () => {
     const run = await runPipeline("golden-test", allAvailableFetch());
-    const md = renderRunMd(run);
+    const md = renderRunMd(run, { now: NOW });
     const goldenPath = join(goldenDir, "simple-run.md");
 
     if (!existsSync(goldenPath)) {

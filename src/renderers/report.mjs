@@ -51,7 +51,7 @@ export function writeRun(run, outDir) {
  * @param {object} run - Complete run object
  * @returns {string} Markdown string
  */
-export function renderRunMd(run) {
+export function renderRunMd(run, opts = {}) {
   const lines = [];
   const opinion = run.opinion || {};
   const tierEmoji =
@@ -87,7 +87,7 @@ export function renderRunMd(run) {
 
   // Freshness Warning (conditional)
   {
-    const freshness = checkFreshness(run, { maxAgeHours: 24 });
+    const freshness = checkFreshness(run, { maxAgeHours: 24, now: opts.now });
     if (freshness.isStale) {
       lines.push(`> **\u26A0\uFE0F Freshness Warning:** ${freshness.banner}`);
       lines.push("");
