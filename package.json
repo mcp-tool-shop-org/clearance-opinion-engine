@@ -1,6 +1,6 @@
 {
   "name": "@mcptoolshop/clearance-opinion-engine",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "description": "Deterministic name-availability and clearance-opinion engine",
   "type": "module",
   "main": "src/index.mjs",
@@ -11,7 +11,8 @@
     "start": "node src/index.mjs",
     "test": "node --test tests/unit/*.test.mjs",
     "test:e2e": "node --test tests/e2e/*.test.mjs",
-    "test:all": "node --test tests/unit/*.test.mjs tests/e2e/*.test.mjs"
+    "test:all": "node --test tests/unit/*.test.mjs tests/e2e/*.test.mjs",
+    "verify": "npm run test:all && echo 'All checks passed'"
   },
   "engines": {
     "node": ">=20"
@@ -48,6 +49,7 @@
     "src/",
     "schema/",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ]
 }

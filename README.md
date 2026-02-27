@@ -465,6 +465,31 @@ See [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for the full list.
 
 ---
 
+## Security & Data Scope
+
+Clearance Opinion Engine is a **deterministic CLI tool** — read-only public API queries, no telemetry, evidence-backed opinions.
+
+- **Data accessed:** Queries public APIs (GitHub, npm, PyPI, RDAP, crates.io, Docker Hub, Hugging Face) for namespace availability. Reads/writes JSON reports, corpus files, and cache to local filesystem.
+- **Data NOT accessed:** No telemetry. No credential storage. API tokens are used for rate-limit elevation only and never appear in output — evidence redaction strips tokens before writing.
+- **Permissions required:** Network access for public API queries. File system read/write for reports, cache, and corpus.
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting.
+
+---
+
+## Scorecard
+
+| Category | Score |
+|----------|-------|
+| Security | 10/10 |
+| Error Handling | 10/10 |
+| Operator Docs | 10/10 |
+| Shipping Hygiene | 10/10 |
+| Identity | 10/10 |
+| **Overall** | **50/50** |
+
+---
+
 ## License
 
 MIT
